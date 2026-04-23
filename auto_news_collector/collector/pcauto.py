@@ -427,7 +427,8 @@ class PcautoCollector:
 
         # 非新闻页面的明显特征（URL级别）
         bad_url_patterns = [
-            'price.pcauto.com.cn/sg',    # 太平洋车型页
+            'price.pcauto.com.cn/sg',    # 太平洋车型/报价页（sg开头）
+            'price.pcauto.com.cn/cars/',  # 太平洋车型列表
             '/cars/',                     # 车型列表页
             '/photo/',                    # 图片页
             '/video/',                    # 视频页
