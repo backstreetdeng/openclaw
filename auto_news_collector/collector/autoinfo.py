@@ -143,25 +143,32 @@ class AutoinfoCollector:
         return results[:max_count]
 
     def _fetch_content_via_search(self, title: str) -> str:
+        """用标题在多个搜索引擎搜索，获取正文"""
         if not title:
             return ""
 
-        engines = [("必应", self._search_bing), ("百度", self._search_baidu)]
+        # 搜索引勤列表（不限网站，广撒网）
+        engines = [
+            ("百度", self._search_baidu),
+            ("360", self._search_360),
+            ("搜狗", self._search_sogou),
+            ("必应", self._search_bing),
+        ]
 
         for engine_name, search_func in engines:
             try:
                 result = search_func(title)
-                if result:
-                    print(f"  [Autoinfo] {engine_name}搜索成功")
+                if result and len(result) > 50:
+                    print(f"  [Autoinfo] {engine_name}获取成功")
                     return result
             except Exception as e:
-                print(f"  [Autoinfo] {engine_name}搜索失败: {e}")
+                print(f"  [Autoinfo] {engine_name}失败: {e}")
                 continue
 
         return title
 
     def _search_bing(self, query: str) -> str:
-        time.sleep(random.uniform(3, 5))
+        time.sleep(random.uniform(2, 4))
 
         url = f"https://cn.bing.com/search?q={urllib.parse.quote(query)}"
         headers = {
@@ -179,7 +186,7 @@ class AutoinfoCollector:
         return self._extract_content(resp.text)
 
     def _search_baidu(self, query: str) -> str:
-        time.sleep(random.uniform(3, 6))
+        time.sleep(random.uniform(2, 4))
 
         url = f"https://www.baidu.com/s?wd={urllib.parse.quote(query)}"
         headers = {
@@ -196,15 +203,50 @@ class AutoinfoCollector:
 
         return self._extract_content(resp.text)
 
+    def _search_360(self, query: str) -> str:
+        time.sleep(random.uniform(2, 4))
+
+        url = f"https://www.so.com/s?q={urllib.parse.quote(query)}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.360.cn/',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        }
+
+        resp = requests.get(url, headers=headers, timeout=20)
+        resp.encoding = 'utf-8'
+
+        if self._is_blocked(resp.text):
+            return None
+
+        return self._extract_content(resp.text)
+
+    def _search_sogou(self, query: str) -> str:
+        time.sleep(random.uniform(2, 4))
+
+        url = f"https://www.sogou.com/web?query={urllib.parse.quote(query)}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.sogou.com/',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        }
+
+        resp = requests.get(url, headers=headers, timeout=20)
+        resp.encoding = 'utf-8'
+
+        if self._is_blocked(resp.text):
+            return None
+
+        return self._extract_content(resp.text)
+
     def _is_blocked(self, text: str) -> bool:
         return any(p in text for p in ['验证码', '请协助验证', '自动程序', 'SourceVerifyCode'])
 
     def _extract_content(self, html: str) -> str:
+        """从搜索结果提取正文，不限制特定网站"""
         soup = BeautifulSoup(html, 'html.parser')
 
-        trusted = ['gov.cn', 'people.com.cn', 'xinhuanet.com', 'cctv.com',
-                   'autohome.com.cn', 'pcauto.com.cn', 'bitauto.com', 'dongchedi.com']
-
+        # 查找所有可能的链接
         results = []
         for h3 in soup.find_all('h3'):
             a = h3.find('a', href=True)
@@ -224,15 +266,14 @@ class AutoinfoCollector:
             else:
                 continue
 
-            is_trusted = any(t in real_url for t in trusted)
-            results.append({'url': real_url, 'trusted': is_trusted})
+            if real_url and len(real_url) > 10:
+                results.append({'url': real_url})
 
         if not results:
             return None
 
-        results.sort(key=lambda x: x['trusted'], reverse=True)
-
-        for result in results[:3]:
+        # 遍历搜索结果，尝试获取正文
+        for result in results[:5]:
             try:
                 headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -245,11 +286,13 @@ class AutoinfoCollector:
                 for tag in soup(['script', 'style', 'nav', 'header', 'footer']):
                     tag.decompose()
 
+                # 查找文章主体
                 article = (soup.find('div', class_='article-content') or
                           soup.find('div', class_='news-content') or
                           soup.find('div', id='ContentBody') or
                           soup.find('article') or
-                          soup.find('div', class_='detail'))
+                          soup.find('div', class_='detail') or
+                          soup.find('div', class_='content'))
 
                 if article:
                     paragraphs = article.find_all('p')
