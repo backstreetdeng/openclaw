@@ -223,47 +223,73 @@ class PcautoCollector:
         从搜索引擎响应中提取正文
 
         策略：
-        1. 查找搜索结果中的链接（过滤权威汽车媒体）
-        2. 访问第一个有效链接获取正文
-        3. 校验日期：2026年以前的标记为"不可靠"
+        1. 从h3标签提取搜索结果（更准确）
+        2. 解析 /link?url= 重定向获取真实URL
+        3. 优先选择权威汽车媒体
+        4. 访问第一个有效链接获取正文
+        5. 校验日期：2026年以前的标记为"不可靠"
         """
         from bs4 import BeautifulSoup
 
         soup = BeautifulSoup(html, 'html.parser')
 
-        # 优先查找的权威汽车媒体域名
+        # 权威汽车媒体域名
         trusted_domains = [
             'autohome.com.cn',      # 汽车之家
             'pcauto.com.cn',         # 太平洋汽车
             'bitauto.com',           # 易车
             'che168.com',            # 二手车之家
             'ijia360.com',           # 爱卡汽车
-            'qichemall.com',         # 懂车帝
+            'dongchedi.com',         # 懂车帝
+            'sohu.com/autohome',     # 搜狐汽车
+            'sina.com.cn/auto',      # 新浪汽车
+            'ifeng.com/auto',        # 凤凰汽车
         ]
 
-        # 查找所有搜索结果链接
-        links = []
-        for a in soup.find_all('a', href=True):
-            href = a.get('href', '')
-            if href and ('http://' in href or 'https://' in href):
-                # 检查是否来自权威媒体
-                is_trusted = any(domain in href for domain in trusted_domains)
-                links.append((href, is_trusted, a.get_text(strip=True)[:100]))
+        # 查找搜索结果：从h3标签提取
+        results = []
+        for h3 in soup.find_all('h3'):
+            a = h3.find('a', href=True)
+            if not a:
+                continue
 
-        if not links:
+            href = a.get('href', '')
+
+            # 处理重定向链接：/link?url=xxx -> 需要访问获取真实URL
+            if href.startswith('/link?url='):
+                real_url = self._resolve_sogou_redirect(href)
+            elif href.startswith('http'):
+                real_url = href
+            else:
+                continue
+
+            if not real_url:
+                continue
+
+            # 检查是否来自权威媒体
+            is_trusted = any(domain in real_url for domain in trusted_domains)
+            title = a.get_text(strip=True)[:60]
+
+            results.append({
+                'url': real_url,
+                'title': title,
+                'trusted': is_trusted
+            })
+
+        if not results:
             return None
 
         # 优先选择权威媒体的链接
-        trusted_links = [l for l in links if l[1]]
-        links_to_try = trusted_links[:3] + links[:5]
+        results.sort(key=lambda x: x['trusted'], reverse=True)
 
         # 尝试访问链接获取正文
-        for link, _, snippet in links_to_try:
+        for result in results[:5]:
+            url = result['url']
             try:
                 headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 }
-                resp = requests.get(link, headers=headers, timeout=15)
+                resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
                 resp.encoding = resp.apparent_encoding or 'utf-8'
 
                 # 提取正文
@@ -277,10 +303,22 @@ class PcautoCollector:
                     return content
 
             except Exception as e:
-                print(f"  [Pcauto] 访问链接失败 {link[:50]}: {e}")
+                print(f"  [Pcauto] 访问链接失败 {url[:50]}: {e}")
                 continue
 
         return None
+
+    def _resolve_sogou_redirect(self, redirect_url: str) -> Optional[str]:
+        """解析搜狗重定向链接，获取真实URL"""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://www.sogou.com/',
+            }
+            resp = requests.get(redirect_url, headers=headers, timeout=10, allow_redirects=True)
+            return resp.url
+        except:
+            return None
 
     def _extract_article_content(self, html: str) -> str:
         """从HTML中提取文章正文"""
