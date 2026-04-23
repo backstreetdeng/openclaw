@@ -171,14 +171,14 @@ class AutoinfoCollector:
         return results[:max_count]
 
     def _fetch_content_via_search(self, title: str) -> dict:
-        """用标题在一个搜索引擎搜索（轮询分配），获取正文和URL，总超时25秒"""
+        """用标题在多个搜索引擎搜索（轮询分配），获取正文和URL，总超时40秒"""
         if not title:
             return {"content": "", "url": ""}
 
         start_time = time.time()
-        max_total_time = 25  # 总超时25秒
+        max_total_time = 40  # 总超时40秒（增加时间以支持多引擎尝试）
 
-        # 轮询分配引擎：每条新闻只用1个引擎，避免重复请求
+        # 轮询分配起始引擎：每条新闻从不同引擎开始
         engines = [
             ("百度", self._search_baidu),
             ("360", self._search_360),
@@ -189,16 +189,35 @@ class AutoinfoCollector:
         idx = self._engine_index % len(engines)
         self._engine_index += 1
 
-        engine_name = engines[idx][0]
-        search_func = engines[idx][1]
+        # 尝试所有引擎（从起始引擎开始，轮询）
+        tried_urls = set()  # 记录已尝试的URL，避免重复
+        for offset in range(len(engines)):
+            if time.time() - start_time > max_total_time:
+                print(f"  [Autoinfo] 总超时，放弃")
+                break
 
-        try:
-            result = search_func(title)
-            if result and result.get("content") and len(result.get("content", "")) > 30:
-                print(f"  [Autoinfo] {engine_name}获取成功")
-                return result
-        except Exception as e:
-            print(f"  [Autoinfo] {engine_name}失败: {e}")
+            engine_idx = (idx + offset) % len(engines)
+            engine_name = engines[engine_idx][0]
+            search_func = engines[engine_idx][1]
+
+            try:
+                result = search_func(title)
+                
+                # 检查结果是否有效（URL去重 + 内容长度检查）
+                if result and result.get("content") and len(result.get("content", "")) > 30:
+                    result_url = result.get("url", "")
+                    
+                    # 避免重复尝试同一个URL
+                    if result_url and result_url not in tried_urls:
+                        tried_urls.add(result_url)
+                        print(f"  [Autoinfo] {engine_name}获取成功 ({len(result.get('content', ''))}字符)")
+                        return result
+                    elif not result_url:
+                        # 有内容但没有URL，也接受
+                        print(f"  [Autoinfo] {engine_name}获取成功 ({len(result.get('content', ''))}字符，无URL)")
+                        return result
+            except Exception as e:
+                print(f"  [Autoinfo] {engine_name}失败: {e}")
 
         return {"content": "", "url": ""}
 
@@ -253,6 +272,34 @@ class AutoinfoCollector:
                 soup = BeautifulSoup(resp.text, 'html.parser')
                 for tag in soup(['script', 'style', 'nav', 'header', 'footer']):
                     tag.decompose()
+
+                # 检测"即将离开"提示页，尝试找到"继续访问"链接
+                leave_text = soup.find(string=lambda t: t and '即将离开' in t if t else False)
+                if leave_text:
+                    continue_link = None
+                    for a in soup.find_all('a', href=True):
+                        if '继续' in a.get_text() or '继续访问' in a.get_text():
+                            continue_link = a['href']
+                            break
+                    if continue_link:
+                        try:
+                            follow_resp = requests.get(continue_link, headers=headers, timeout=10, allow_redirects=True)
+                            if follow_resp.status_code == 200:
+                                follow_soup = BeautifulSoup(follow_resp.text, 'html.parser')
+                                for tag in follow_soup(['script', 'style', 'nav', 'header', 'footer']):
+                                    tag.decompose()
+                                article = (follow_soup.find('div', class_='article-content') or
+                                          follow_soup.find('div', id='UCAP-CONTENT') or
+                                          follow_soup.find('article') or
+                                          follow_soup.find('div', class_='content'))
+                                if article:
+                                    paragraphs = article.find_all('p')
+                                    if paragraphs:
+                                        text = '\n'.join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
+                                        if len(text) > 30:
+                                            return {"content": text, "url": follow_resp.url}
+                        except:
+                            pass
 
                 article = (soup.find('div', class_='article-content') or
                           soup.find('div', class_='news-content') or
@@ -382,6 +429,37 @@ class AutoinfoCollector:
                 soup = BeautifulSoup(resp.text, 'html.parser')
                 for tag in soup(['script', 'style', 'nav', 'header', 'footer']):
                     tag.decompose()
+
+                # 检测"即将离开"提示页，尝试找到"继续访问"链接
+                leave_text = soup.find(string=lambda t: t and '即将离开' in t if t else False)
+                if leave_text:
+                    # 尝试找到继续访问的链接
+                    continue_link = None
+                    for a in soup.find_all('a', href=True):
+                        if '继续' in a.get_text() or '继续访问' in a.get_text():
+                            continue_link = a['href']
+                            break
+                    if continue_link:
+                        try:
+                            # 跟随继续访问链接
+                            follow_resp = requests.get(continue_link, headers=headers, timeout=10, allow_redirects=True)
+                            if follow_resp.status_code == 200:
+                                follow_soup = BeautifulSoup(follow_resp.text, 'html.parser')
+                                for tag in follow_soup(['script', 'style', 'nav', 'header', 'footer']):
+                                    tag.decompose()
+                                # 在跳转后的页面中查找正文
+                                article = (follow_soup.find('div', class_='article-content') or
+                                          follow_soup.find('div', id='UCAP-CONTENT') or
+                                          follow_soup.find('article') or
+                                          follow_soup.find('div', class_='content'))
+                                if article:
+                                    paragraphs = article.find_all('p')
+                                    if paragraphs:
+                                        text = '\n'.join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
+                                        if len(text) > 100:
+                                            return {"content": text, "url": follow_resp.url}
+                        except:
+                            pass
 
                 # 查找文章主体
                 article = (soup.find('div', class_='article-content') or
