@@ -101,7 +101,7 @@ class AutoinfoCollector:
                 try:
                     title = record.get('title', '')
                     province = record.get('province', '')  # 省份字段
-                    public_date_str = record.get('publishDate', '') or record.get('publishTime', '')
+                    public_date_str = record.get('publicDate', '') or record.get('publishDate', '')
                     article_id = record.get('id', '')
 
                     # 解析日期
@@ -181,7 +181,7 @@ class AutoinfoCollector:
             for record in records:
                 try:
                     title = record.get('title', '')
-                    public_date_str = record.get('publishDate', '') or record.get('publishTime', '')
+                    public_date_str = record.get('publicDate', '') or record.get('publishDate', '')
                     article_id = record.get('id', '')
 
                     # 解析日期
