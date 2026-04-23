@@ -95,6 +95,14 @@ class WordExporter:
                 for idx, (category, cat_news) in enumerate(sub_results.items()):
                     if isinstance(cat_news, list) and cat_news:
                         self._add_category_section(f"（{chinese_nums[idx]}）{category}", cat_news)
+            elif domain == "宏观经济政策" and "宏观经济政策_分领域" in results:
+                # 宏观经济政策直接按分领域输出，不重复显示
+                self._add_domain_section(domain, [])
+                chinese_nums = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+                sub_results = results["宏观经济政策_分领域"]
+                for idx, (category, cat_news) in enumerate(sub_results.items()):
+                    if isinstance(cat_news, list) and cat_news:
+                        self._add_category_section(f"（{chinese_nums[idx]}）{category}", cat_news)
             elif news_list:
                 self._add_domain_section(domain, news_list)
 
@@ -168,6 +176,11 @@ class WordExporter:
                 cat_count = sum(1 for cat_news in results["新技术/新趋势_分领域"].values() if cat_news)
                 domain_count += cat_count
                 continue
+            # 宏观经济政策的分领域不算独立领域，按分领域展示
+            if k == "宏观经济政策" and "宏观经济政策_分领域" in results:
+                cat_count = sum(1 for cat_news in results["宏观经济政策_分领域"].values() if cat_news)
+                domain_count += cat_count
+                continue
             domain_count += 1
 
         p = self.doc.add_paragraph()
@@ -199,6 +212,12 @@ class WordExporter:
             elif k == "新技术/新趋势" and "新技术/新趋势_分领域" in results:
                 chinese_nums = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
                 for idx, (cat, cat_news) in enumerate(results["新技术/新趋势_分领域"].items()):
+                    if cat_news:
+                        stats_parts.append(f"（{chinese_nums[idx]}）{cat}: {len(cat_news)}条")
+            # 宏观经济政策按分领域展示
+            elif k == "宏观经济政策" and "宏观经济政策_分领域" in results:
+                chinese_nums = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+                for idx, (cat, cat_news) in enumerate(results["宏观经济政策_分领域"].items()):
                     if cat_news:
                         stats_parts.append(f"（{chinese_nums[idx]}）{cat}: {len(cat_news)}条")
             else:
