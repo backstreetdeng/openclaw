@@ -21,25 +21,57 @@ class AutoinfoCollector:
         self._engine_index = 0  # 轮询计数器
 
     def collect(self, start_date: datetime, end_date: datetime, max_count: int = 10) -> List[Dict]:
-        results = []
+        """
+        统一采集逻辑：
+        1. 获取所有数据（newPolicy + policyReport）
+        2. 统一做时间范围过滤
+        3. 统一做 province="国家" OR 关键字 过滤
+        4. 去重
+        5. 补充正文（通过搜索引擎）
+        """
+        all_results = []
         seen_titles = set()
 
+        # 1. 获取newPolicy数据（已做时间过滤）
         new_policy_results = self._collect_new_policy(start_date, end_date, max_count)
-        for item in new_policy_results:
-            if item['title'] not in seen_titles:
-                results.append(item)
-                seen_titles.add(item['title'])
+        all_results.extend(new_policy_results)
 
-        if len(results) < max_count:
-            report_results = self._collect_policy_report(start_date, end_date, max_count)
-            for item in report_results:
-                if item['title'] not in seen_titles and len(results) < max_count:
-                    results.append(item)
-                    seen_titles.add(item['title'])
+        # 2. 获取policyReport数据（已做时间过滤）
+        if len(all_results) < max_count * 2:
+            report_results = self._collect_policy_report(start_date, end_date, max_count * 2)
+            all_results.extend(report_results)
 
-        return results[:max_count]
+        # 3. 统一做 province="国家" OR 关键字 过滤
+        filtered = []
+        for item in all_results:
+            title = item['title']
+            province = item.get('province', '')
+
+            cond1 = (province == "国家")
+            cond2 = any(k in title for k in self.include_keywords)
+
+            if cond1 or cond2:
+                if title not in seen_titles:
+                    filtered.append(item)
+                    seen_titles.add(title)
+
+        # 4. 截取max_count
+        filtered = filtered[:max_count]
+
+        # 5. 通过搜索引擎补充正文
+        for item in filtered:
+            search_result = self._fetch_content_via_search(item['title'])
+
+            # 优先用搜索结果的URL和正文
+            if search_result.get("url"):
+                item['link'] = search_result.get("url")
+            if search_result.get("content") and len(search_result.get("content", "")) > 30:
+                item['content'] = search_result.get("content")
+
+        return filtered
 
     def _collect_new_policy(self, start_date: datetime, end_date: datetime, max_count: int) -> List[Dict]:
+        """只做时间范围过滤，其他筛选在collect()里统一处理"""
         results = []
         try:
             params = {'pageNum': 1, 'pageSize': 30, 'flag': '0'}
@@ -66,33 +98,18 @@ class AutoinfoCollector:
                         except:
                             pass
 
+                    # 只做时间范围过滤
                     if not (pub_date and (start_date <= pub_date <= end_date)):
                         continue
 
-                    cond1 = (province == "国家")
-                    cond2 = any(k in title for k in self.include_keywords)
-
-                    if not (cond1 or cond2):
-                        continue
-
-                    # 优先用搜索引擎获取正文和URL（如果搜索失败则用autoinfo链接+标题）
-                    search_result = self._fetch_content_via_search(title)
-
-                    article_url = search_result.get("url") or f"https://www.autoinfo.org.cn/#/policy/dynamic/index?id={article_id}" if article_id else ""
-
-                    # 如果搜索返回了有效正文（>30字符），则使用；否则尝试API摘要
-                    content = search_result.get("content", "")
-                    if not content or len(content) < 30:
-                        summary = record.get('summary', '') or record.get('description', '') or ''
-                        content = summary if len(summary) > 20 else title
-
                     results.append({
                         "title": title,
-                        "link": article_url,
+                        "link": f"https://www.autoinfo.org.cn/#/policy/dynamic/index?id={article_id}" if article_id else "",
                         "date": public_date_str[:10] if public_date_str else "",
-                        "content": content,
+                        "content": title,  # 先用标题占位
                         "source": "autoinfo",
                         "province": province,
+                        "article_id": article_id,
                     })
                 except Exception as e:
                     print(f"处理newPolicy记录失败: {e}")
@@ -104,6 +121,7 @@ class AutoinfoCollector:
         return results[:max_count]
 
     def _collect_policy_report(self, start_date: datetime, end_date: datetime, max_count: int) -> List[Dict]:
+        """只做时间范围过滤，其他筛选在collect()里统一处理"""
         results = []
         try:
             params = {'pageNum': 1, 'pageSize': 30}
@@ -121,6 +139,7 @@ class AutoinfoCollector:
                     title = record.get('title', '')
                     public_date_str = record.get('publicDate', '') or record.get('publishDate', '')
                     article_id = record.get('id', '')
+                    summary = record.get('summary', '') or ''
 
                     pub_date = None
                     if public_date_str:
@@ -129,31 +148,18 @@ class AutoinfoCollector:
                         except:
                             pass
 
+                    # 只做时间范围过滤
                     if pub_date and not (start_date <= pub_date <= end_date):
                         continue
 
-                    # policyReport没有province字段，所以只用关键字过滤
-                    if not any(k in title for k in self.include_keywords):
-                        continue
-
-                    # 优先用搜索引擎获取正文和URL（如果搜索失败则用autoinfo链接+标题）
-                    search_result = self._fetch_content_via_search(title)
-
-                    article_url = search_result.get("url") or f"https://www.autoinfo.org.cn/#/policy/dynamic/index?id={article_id}" if article_id else ""
-
-                    # 如果搜索返回了有效正文（>50字符），则使用；否则用标题
-                    content = search_result.get("content", "")
-                    if not content or len(content) < 50:
-                        # 搜索失败时，尝试从API摘要获取有价值的内容
-                        summary = record.get('summary', '') or record.get('description', '') or ''
-                        content = summary if len(summary) > 50 else title
-
                     results.append({
                         "title": title,
-                        "link": article_url,
+                        "link": f"https://www.autoinfo.org.cn/#/policy/dynamic/index?id={article_id}" if article_id else "",
                         "date": public_date_str[:10] if public_date_str else "",
-                        "content": content,
+                        "content": summary if summary else title,  # 优先用摘要
                         "source": "autoinfo",
+                        "province": "",  # policyReport没有province字段
+                        "article_id": article_id,
                     })
                 except Exception as e:
                     print(f"处理policyReport记录失败: {e}")
