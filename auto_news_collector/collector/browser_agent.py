@@ -59,9 +59,10 @@ class MacroCollector:
         keywords: List[str],
         max_count: int
     ) -> List[Dict]:
-        """采集gov.cn文章 - 使用JSON API"""
+        """采集gov.cn文章 - 使用JSON API + 正文抓取"""
         import requests
         import re
+        import time
 
         results = []
 
@@ -72,7 +73,7 @@ class MacroCollector:
             base_url = url.rstrip('/')
             path_part = base_url.replace('https://www.gov.cn', '').strip('/')
             parts = path_part.split('/')
-            
+
             # 根据路径决定是否反转
             if path_part.startswith('yaowen'):
                 # 要闻：正序
@@ -80,23 +81,23 @@ class MacroCollector:
             else:
                 # 其他（如政策）：反序
                 json_path = ''.join(reversed(parts)).upper()
-            
+
             json_url = f"{base_url}/{json_path}.json"
-            
+
             resp = requests.get(json_url, timeout=30)
             data = resp.json()
-            
+
             for item in data:
                 if len(results) >= max_count:
                     break
-                
+
                 title = item.get('TITLE', '')
                 article_url = item.get('URL', '')
-                date_str = (item.get('DOCRELPUBTIME', '') or 
-                           item.get('DOC_REL_PUBTIME', '') or 
-                           item.get('TIME', '') or 
+                date_str = (item.get('DOCRELPUBTIME', '') or
+                           item.get('DOC_REL_PUBTIME', '') or
+                           item.get('TIME', '') or
                            item.get('date', ''))
-                
+
                 # 解析日期
                 pub_date = None
                 if date_str:
@@ -104,28 +105,78 @@ class MacroCollector:
                         pub_date = datetime.strptime(date_str[:10], "%Y-%m-%d")
                     except:
                         pass
-                
+
                 # 日期过滤
                 if pub_date and not (start_date <= pub_date <= end_date):
                     continue
-                
+
                 # 关键字过滤
                 if keywords and not any(k in title for k in keywords):
                     continue
-                
+
                 if title and article_url:
+                    # 抓取正文
+                    content = self._fetch_gov_article(article_url)
+
                     results.append({
                         "title": title,
                         "link": article_url if article_url.startswith("http") else f"https://www.gov.cn{article_url}",
                         "date": date_str[:10] if date_str else (pub_date.strftime("%Y-%m-%d") if pub_date else ""),
-                        "content": title,
+                        "content": content,
                         "source": "gov.cn"
                     })
+
+                    # 延时避免请求过快
+                    time.sleep(1)
 
         except Exception as e:
             print(f"_collect_gov失败: {e}")
 
         return results[:max_count]
+
+    def _fetch_gov_article(self, url: str) -> str:
+        """抓取gov.cn文章正文"""
+        import requests
+        from bs4 import BeautifulSoup
+
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            }
+            resp = requests.get(url, headers=headers, timeout=15)
+            resp.encoding = 'utf-8'
+
+            soup = BeautifulSoup(resp.text, 'html.parser')
+
+            # 移除脚本和样式
+            for tag in soup(['script', 'style', 'nav', 'header', 'footer']):
+                tag.decompose()
+
+            # 查找文章主体 - gov.cn通常在div.detail或div.article里
+            article = soup.find('div', class_='detail') or \
+                     soup.find('div', class_='article') or \
+                     soup.find('div', id='zoom')
+
+            if article:
+                # 提取所有段落
+                paragraphs = article.find_all('p')
+                if paragraphs:
+                    text = '\n'.join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
+                    return text
+
+                # 直接获取文本
+                return article.get_text(separator='\n', strip=True)
+
+            # 备选：查找最大的文本块
+            body = soup.find('body')
+            if body:
+                return body.get_text(separator='\n', strip=True)[:5000]
+
+        except Exception as e:
+            print(f"_fetch_gov_article失败: {e}")
+
+        return ""
 
     def _collect_eastmoney(
         self,
