@@ -32,7 +32,7 @@ class MacroCollector:
 
         for sub_name, sub_config in sub_domains.items():
             url = sub_config.get("url", "")
-            keywords = sub_config.get("keywords", [])
+            keywords = sub_config.get("include_keywords", [])
             max_count = sub_config.get("max_count", 3)
 
             try:
