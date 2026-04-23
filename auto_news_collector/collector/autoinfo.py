@@ -107,18 +107,17 @@ class AutoinfoCollector:
                         except:
                             pass
 
-                    # 判断是否满足采集条件（并集关系）
-                    # 条件1: province="国家"
-                    cond1 = (province == "国家")
+                    # 判断是否满足采集条件
+                    # 条件3（时间要求）：强制的，所有采集都必须满足
+                    if not (pub_date and (start_date <= pub_date <= end_date)):
+                        continue
 
-                    # 条件2: title含关键字
+                    # 条件1 OR 条件2（并集关系）：满足任一即采集
+                    cond1 = (province == "国家")
                     cond2 = any(k in title for k in self.include_keywords)
 
-                    # 条件3: 时间在范围内
-                    cond3 = pub_date and (start_date <= pub_date <= end_date)
-
-                    # 满足任一条件即采集
-                    if not (cond1 or cond2 or cond3):
+                    # 满足(条件1 OR 条件2) AND 条件3
+                    if not (cond1 or cond2):
                         continue
 
                     # 构建URL
