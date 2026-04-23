@@ -241,6 +241,8 @@ class PcautoCollector:
             'che168.com',            # 二手车之家
             'ijia360.com',           # 爱卡汽车
             'dongchedi.com',         # 懂车帝
+            'yoojia.com',            # 有驾
+            'gasgoo.com',            # 盖世汽车
             'sohu.com/autohome',     # 搜狐汽车
             'sina.com.cn/auto',      # 新浪汽车
             'ifeng.com/auto',        # 凤凰汽车
