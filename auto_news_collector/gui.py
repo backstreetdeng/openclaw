@@ -328,6 +328,15 @@ class MainWindow(QMainWindow):
             QMessageBox QPushButton:hover {{
                 background-color: {self.ACCENT_BLUE_HOVER};
             }}
+            QMessageBox QPushButton:enabled {{
+                background-color: {self.ACCENT_BLUE};
+                color: white;
+            }}
+            QMessageBox QPushButton:default {{
+                background-color: {self.ACCENT_BLUE};
+                color: white;
+                font-weight: bold;
+            }}
             
             /* 对话框 */
             QDialog {{
