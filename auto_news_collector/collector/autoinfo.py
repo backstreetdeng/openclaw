@@ -90,19 +90,18 @@ class AutoinfoCollector:
             response = requests.get(self.api_new_policy, params=params, headers=headers, timeout=30)
             data = response.json()
 
-            # 调试：打印返回结构
+            # 实际返回格式：{"total":..., "data": [...], "code":..., "msg":...}
             if not isinstance(data, dict):
                 print(f"_collect_new_policy: 返回数据类型是 {type(data)}，不是dict")
-                print(f"返回内容: {str(data)[:200]}")
                 return []
 
-            records = data.get('data', {}).get('rows', [])
+            records = data.get('data', [])  # 直接是list，不是 {'rows': [...]}
 
             for record in records:
                 try:
-                    title = record.get('title', '') or record.get('policyName', '')
+                    title = record.get('title', '')
                     province = record.get('province', '')  # 省份字段
-                    public_date_str = record.get('publicDate', '') or record.get('publishTime', '')
+                    public_date_str = record.get('publishDate', '') or record.get('publishTime', '')
                     article_id = record.get('id', '')
 
                     # 解析日期
@@ -172,18 +171,17 @@ class AutoinfoCollector:
             response = requests.get(self.api_policy_report, params=params, headers=headers, timeout=30)
             data = response.json()
 
-            # 调试：打印返回结构
+            # 实际返回格式：{"total":..., "data": [...], "code":..., "msg":...}
             if not isinstance(data, dict):
                 print(f"_collect_policy_report: 返回数据类型是 {type(data)}，不是dict")
-                print(f"返回内容: {str(data)[:200]}")
                 return []
 
-            records = data.get('data', {}).get('rows', [])
+            records = data.get('data', [])  # 直接是list
 
             for record in records:
                 try:
-                    title = record.get('title', '') or record.get('policyName', '')
-                    public_date_str = record.get('publicDate', '') or record.get('publishTime', '')
+                    title = record.get('title', '')
+                    public_date_str = record.get('publishDate', '') or record.get('publishTime', '')
                     article_id = record.get('id', '')
 
                     # 解析日期
