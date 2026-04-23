@@ -847,7 +847,18 @@ class MainWindow(QMainWindow):
     def _collect_worker(self, domains, start_date, end_date):
         try:
             results = {}
-            total_steps = sum(len(DOMAINS[d]["urls"]) if "urls" in DOMAINS[d] else 1 for d in domains)
+            # 计算总步数：URL数量 + 领域7/8的API采集 + pcauto单独算1步
+            total_steps = 0
+            for d in domains:
+                if "urls" in DOMAINS[d]:
+                    total_steps += len(DOMAINS[d]["urls"])
+                elif d in ["政策法规"]:
+                    total_steps += 1
+                else:
+                    total_steps += 1
+                # 新车上市需要额外加pcauto步骤
+                if d == "新车上市":
+                    total_steps += 1
             current_step = 0
 
             for domain in domains:
@@ -980,6 +991,9 @@ class MainWindow(QMainWindow):
                         self.comm.log_signal.emit(f"  太平洋汽车: +{len(pcauto_news)}条")
                     except Exception as e:
                         self.comm.log_signal.emit(f"  太平洋汽车: 失败 - {str(e)}")
+
+                    current_step += 1
+                    self.comm.progress_signal.emit(int(current_step / total_steps * 100))
 
                 results[domain] = domain_results
 
