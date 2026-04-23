@@ -980,13 +980,12 @@ class MainWindow(QMainWindow):
                         autoinfo = AutoinfoCollector()
                         policy_news = autoinfo.collect(
                             start_date=start_date, end_date=end_date,
-                            max_count=domain_config.get("max_count", 10),
-                            include_keywords=domain_config.get("include_keywords", [])
+                            max_count=domain_config.get("max_count", 10)
                         )
                         domain_results.extend(policy_news)
                         self.comm.log_signal.emit(f"  政策API: +{len(policy_news)}条")
-                    except:
-                        self.comm.log_signal.emit(f"  政策API: 失败")
+                    except Exception as e:
+                        self.comm.log_signal.emit(f"  政策API: 失败 - {e}")
 
                 if domain == "新车上市":
                     try:
