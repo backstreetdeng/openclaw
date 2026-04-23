@@ -132,6 +132,10 @@ class AutoinfoCollector:
                     if pub_date and not (start_date <= pub_date <= end_date):
                         continue
 
+                    # policyReport没有province字段，所以只用关键字过滤
+                    if not any(k in title for k in self.include_keywords):
+                        continue
+
                     # 优先用搜索引擎获取正文和URL（如果搜索失败则用autoinfo链接+标题）
                     search_result = self._fetch_content_via_search(title)
 
