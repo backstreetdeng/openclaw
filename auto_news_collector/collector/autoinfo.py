@@ -74,14 +74,18 @@ class AutoinfoCollector:
                     if not (cond1 or cond2):
                         continue
 
-                    article_url = f"https://www.autoinfo.org.cn/#/policy/dynamic/index?id={article_id}" if article_id else ""
-                    content = self._fetch_content_via_search(title)
+                    # 用搜索引擎获取正文和URL
+                    search_result = self._fetch_content_via_search(title)
+
+                    # 优先用搜索结果的URL和正文
+                    article_url = search_result.get("url") or f"https://www.autoinfo.org.cn/#/policy/dynamic/index?id={article_id}" if article_id else ""
+                    content = search_result.get("content") or title
 
                     results.append({
                         "title": title,
                         "link": article_url,
                         "date": public_date_str[:10] if public_date_str else "",
-                        "content": content if content else title,
+                        "content": content,
                         "source": "autoinfo",
                         "province": province,
                     })
@@ -123,14 +127,18 @@ class AutoinfoCollector:
                     if pub_date and not (start_date <= pub_date <= end_date):
                         continue
 
-                    article_url = f"https://www.autoinfo.org.cn/#/policy/dynamic/index?id={article_id}" if article_id else ""
-                    content = self._fetch_content_via_search(title)
+                    # 用搜索引擎获取正文和URL
+                    search_result = self._fetch_content_via_search(title)
+
+                    # 优先用搜索结果的URL和正文
+                    article_url = search_result.get("url") or f"https://www.autoinfo.org.cn/#/policy/dynamic/index?id={article_id}" if article_id else ""
+                    content = search_result.get("content") or title
 
                     results.append({
                         "title": title,
                         "link": article_url,
                         "date": public_date_str[:10] if public_date_str else "",
-                        "content": content if content else title,
+                        "content": content,
                         "source": "autoinfo",
                     })
                 except Exception as e:
@@ -142,10 +150,10 @@ class AutoinfoCollector:
 
         return results[:max_count]
 
-    def _fetch_content_via_search(self, title: str) -> str:
-        """用标题在多个搜索引擎搜索，获取正文，总超时30秒"""
+    def _fetch_content_via_search(self, title: str) -> dict:
+        """用标题在多个搜索引擎搜索，获取正文和URL，总超时30秒"""
         if not title:
-            return ""
+            return {"content": "", "url": ""}
 
         start_time = time.time()
         max_total_time = 30  # 总超时30秒
@@ -166,16 +174,16 @@ class AutoinfoCollector:
 
             try:
                 result = search_func(title)
-                if result and len(result) > 50:
+                if result and result.get("content") and len(result.get("content", "")) > 50:
                     print(f"  [Autoinfo] {engine_name}获取成功")
                     return result
             except Exception as e:
                 print(f"  [Autoinfo] {engine_name}失败: {e}")
                 continue
 
-        return title
+        return {"content": "", "url": ""}
 
-    def _search_bing(self, query: str) -> str:
+    def _search_bing(self, query: str) -> dict:
         time.sleep(random.uniform(1, 2))
 
         url = f"https://cn.bing.com/search?q={urllib.parse.quote(query)}"
@@ -189,11 +197,11 @@ class AutoinfoCollector:
         resp.encoding = 'utf-8'
 
         if self._is_blocked(resp.text):
-            return None
+            return {"content": "", "url": ""}
 
         return self._extract_content(resp.text)
 
-    def _search_baidu(self, query: str) -> str:
+    def _search_baidu(self, query: str) -> dict:
         time.sleep(random.uniform(1, 2))
 
         url = f"https://www.baidu.com/s?wd={urllib.parse.quote(query)}"
@@ -207,11 +215,11 @@ class AutoinfoCollector:
         resp.encoding = 'utf-8'
 
         if self._is_blocked(resp.text):
-            return None
+            return {"content": "", "url": ""}
 
         return self._extract_content(resp.text)
 
-    def _search_360(self, query: str) -> str:
+    def _search_360(self, query: str) -> dict:
         time.sleep(random.uniform(1, 2))
 
         url = f"https://www.so.com/s?q={urllib.parse.quote(query)}"
@@ -225,11 +233,11 @@ class AutoinfoCollector:
         resp.encoding = 'utf-8'
 
         if self._is_blocked(resp.text):
-            return None
+            return {"content": "", "url": ""}
 
         return self._extract_content(resp.text)
 
-    def _search_sogou(self, query: str) -> str:
+    def _search_sogou(self, query: str) -> dict:
         time.sleep(random.uniform(1, 2))
 
         url = f"https://www.sogou.com/web?query={urllib.parse.quote(query)}"
@@ -243,15 +251,15 @@ class AutoinfoCollector:
         resp.encoding = 'utf-8'
 
         if self._is_blocked(resp.text):
-            return None
+            return {"content": "", "url": ""}
 
         return self._extract_content(resp.text)
 
     def _is_blocked(self, text: str) -> bool:
         return any(p in text for p in ['验证码', '请协助验证', '自动程序', 'SourceVerifyCode'])
 
-    def _extract_content(self, html: str) -> str:
-        """从搜索结果提取正文，不限制特定网站"""
+    def _extract_content(self, html: str) -> dict:
+        """从搜索结果提取正文和URL，不限制特定网站"""
         soup = BeautifulSoup(html, 'html.parser')
 
         # 查找所有可能的链接
@@ -278,7 +286,7 @@ class AutoinfoCollector:
                 results.append({'url': real_url})
 
         if not results:
-            return None
+            return {"content": "", "url": ""}
 
         # 只尝试前3个URL，减少时间
         for result in results[:3]:
@@ -307,11 +315,11 @@ class AutoinfoCollector:
                     if paragraphs:
                         text = '\n'.join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
                         if len(text) > 100:
-                            return text
+                            return {"content": text, "url": result['url']}
                     text = article.get_text(separator='\n', strip=True)
                     if len(text) > 100:
-                        return text
+                        return {"content": text, "url": result['url']}
             except:
                 continue
 
-        return None
+        return {"content": "", "url": ""}
