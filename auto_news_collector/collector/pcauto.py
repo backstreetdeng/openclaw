@@ -163,11 +163,10 @@ class PcautoCollector:
                 f"{car_name} 上市",
             ]
 
-        # 搜索引擎列表
+        # 搜索引擎列表（去掉搜狗，容易触发验证）
         engines = [
-            ("搜狗", self._search_sogou),
-            ("百度", self._search_baidu),
             ("必应", self._search_bing),
+            ("百度", self._search_baidu),
         ]
 
         # 尝试每个搜索引擎
@@ -424,41 +423,39 @@ class PcautoCollector:
         """判断是否为新闻页面（非车型说明页）"""
         from bs4 import BeautifulSoup
 
-        # 新闻页面通常包含这些特征
-        news_indicators = [
-            'news',      # URL含news
-            'article',   # URL含article
-            'report',    # URL含report
-            'preview',   # 可能是文章预览
-        ]
-
-        page_indicators = [
-            '车型',      # 车型介绍页
-            '报价',      # 报价页
-            '图片',      # 图片页
-            '视频',      # 视频页
-            '参数',      # 参数页
-            '配置',      # 配置页
-        ]
-
-        # URL检查
         url_lower = url.lower()
-        for indicator in page_indicators:
-            if indicator in url_lower:
+
+        # 非新闻页面的明显特征（URL级别）
+        bad_url_patterns = [
+            'price.pcauto.com.cn/sg',    # 太平洋车型页
+            '/cars/',                     # 车型列表页
+            '/photo/',                    # 图片页
+            '/video/',                    # 视频页
+            '/config/',                   # 配置页
+            '/param/',                    # 参数页
+            '/serie/',                    # 系列页
+            '/guide/',                    # 购车指南页
+        ]
+
+        for pattern in bad_url_patterns:
+            if pattern in url_lower:
                 return False
 
         # 内容检查
         soup = BeautifulSoup(html, 'html.parser')
-        text = soup.get_text().lower()
+        title_elem = soup.find('title')
+        title_text = title_elem.get_text() if title_elem else ""
 
-        # 如果URL明显是新闻，且正文较长，可能是新闻页
-        for indicator in news_indicators:
-            if indicator in url_lower:
-                return True
+        # 标题短且含这些词，大概率是车型页
+        if len(title_text) < 20:
+            bad_title_patterns = ['报价', '图片', '参数', '配置', '车型', '文章', '视频']
+            for p in bad_title_patterns:
+                if p in title_text:
+                    return False
 
-        # 如果标题/正文短，链接多，可能是列表页
-        title = soup.find('title')
-        if title and len(title.get_text()) < 30:
+        # 正文长度检查：如果正文太短，可能不是新闻
+        body_text = soup.get_text()
+        if len(body_text) < 500:
             return False
 
         return True
