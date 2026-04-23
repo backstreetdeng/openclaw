@@ -152,22 +152,32 @@ class PcautoCollector:
         Returns:
             Dict: {"content": str, "url": str} 或 None
         """
-        # 生成搜索关键词：优先站内搜索（site:pcauto.com.cn）
+        # 生成搜索关键词：多站点轮询（汽车之家/太平洋/易车/懂车帝/有驾/爱卡）
+        # 优先搜太平洋，如果没有好结果，尝试其他权威网站
+        sites = [
+            "site:pcauto.com.cn",
+            "site:autohome.com.cn",
+            "site:bitauto.com",
+            "site:dongchedi.com",
+            "site:yoojia.com",
+            "site:ijia360.com",
+        ]
+
+        queries = []
         if car_type == "新车":
-            queries = [
-                f"{car_name} 上市 site:pcauto.com.cn",
-                f"{car_name} site:pcauto.com.cn 上市",
-                f"{car_name} 上市",
-                car_name,
-            ]
+            for site in sites:
+                queries.append(f"{car_name} 上市 {site}")
+                queries.append(f"{car_name} {site}")
+            # 最后用无限制搜索
+            queries.append(f"{car_name} 上市")
+            queries.append(car_name)
         else:  # 改款
-            queries = [
-                f"{car_name} 改款 上市 site:pcauto.com.cn",
-                f"{car_name} 最新消息 site:pcauto.com.cn",
-                f"{car_name} 改款 上市",
-                f"{car_name} 最新消息",
-                f"{car_name} 上市",
-            ]
+            for site in sites:
+                queries.append(f"{car_name} 改款 上市 {site}")
+                queries.append(f"{car_name} 最新消息 {site}")
+            queries.append(f"{car_name} 改款 上市")
+            queries.append(f"{car_name} 最新消息")
+            queries.append(f"{car_name} 上市")
 
         # 搜索引擎列表（去掉搜狗，容易触发验证）
         engines = [
