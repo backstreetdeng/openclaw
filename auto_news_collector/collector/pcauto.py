@@ -227,45 +227,110 @@ class PcautoCollector:
         return self._extract_content_from_search_resp(resp.text, car_name, pub_date)
 
     def _search_baidu(self, query: str, car_name: str, pub_date: Optional[datetime]) -> Optional[Dict]:
-        """百度搜索"""
+        """百度搜索 - 防验证策略"""
         import urllib.parse
         import time
-        time.sleep(2)
+        import random
 
-        url = f"https://www.baidu.com/s?wd={urllib.parse.quote(query)}"
+        # 防验证策略
+        # 1. 随机延时3-6秒（之前是2秒，延长更安全）
+        time.sleep(random.uniform(3, 6))
+
+        # 2. 轮换User-Agent
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+        ]
+        ua = random.choice(user_agents)
+
+        # 3. 完整请求头
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'User-Agent': ua,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+            # 百度需要的referer
+            'Referer': 'https://www.baidu.com/',
         }
-        resp = requests.get(url, headers=headers, timeout=15)
-        resp = self._fix_encoding(resp)
 
-        if self._is_blocked(resp.text):
-            print(f"  [Pcauto] 百度触发验证，跳过")
+        # 4. 百度搜索URL加随机参数防止缓存
+        ts = int(time.time())
+        rn = random.randint(1, 9999)
+        url = f"https://www.baidu.com/s?wd={urllib.parse.quote(query)}&rsv_spt=1&issp=1&f=8&rsv_bp=1&rsv_idx=1&n=2&inputT={rn}"
+
+        try:
+            resp = requests.get(url, headers=headers, timeout=20)
+            resp = self._fix_encoding(resp)
+
+            # 检测是否被拦截
+            if self._is_blocked(resp.text):
+                print(f"  [Pcauto] 百度触发验证，等待更长时间...")
+                # 触发验证后等待更长时间
+                time.sleep(10)
+                return None
+
+            return self._extract_content_from_search_resp(resp.text, car_name, pub_date)
+
+        except requests.exceptions.RequestException as e:
+            print(f"  [Pcauto] 百度请求异常: {e}")
             return None
-
-        return self._extract_content_from_search_resp(resp.text, car_name, pub_date)
 
     def _search_bing(self, query: str, car_name: str, pub_date: Optional[datetime]) -> Optional[Dict]:
-        """必应搜索"""
+        """必应搜索 - 防验证策略"""
         import urllib.parse
         import time
-        time.sleep(2)
+        import random
 
-        url = f"https://cn.bing.com/search?q={urllib.parse.quote(query)}"
+        # 防验证：随机延时3-5秒
+        time.sleep(random.uniform(3, 5))
+
+        # 轮换User-Agent
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+        ]
+        ua = random.choice(user_agents)
+
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'User-Agent': ua,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
         }
-        resp = requests.get(url, headers=headers, timeout=15)
-        resp = self._fix_encoding(resp)
 
-        if self._is_blocked(resp.text):
-            print(f"  [Pcauto] 必应触发验证，跳过")
+        url = f"https://cn.bing.com/search?q={urllib.parse.quote(query)}&cc=CN"
+
+        try:
+            resp = requests.get(url, headers=headers, timeout=20)
+            resp = self._fix_encoding(resp)
+
+            if self._is_blocked(resp.text):
+                print(f"  [Pcauto] 必应触发验证，等待更长时间...")
+                time.sleep(10)
+                return None
+
+            return self._extract_content_from_search_resp(resp.text, car_name, pub_date)
+
+        except requests.exceptions.RequestException as e:
+            print(f"  [Pcauto] 必应请求异常: {e}")
             return None
-
-        return self._extract_content_from_search_resp(resp.text, car_name, pub_date)
 
     def _extract_content_from_search_resp(
         self,
