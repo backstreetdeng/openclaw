@@ -321,11 +321,14 @@ class MacroCollector:
                         continue
 
                 if title:
+                    # 抓取正文
+                    content = self._fetch_eastmoney_article(article_url)
+
                     results.append({
                         "title": title,
                         "link": article_url if article_url.startswith("http") else f"https://finance.eastmoney.com{article_url}",
                         "date": showtime,
-                        "content": title,
+                        "content": content if content else title,
                         "source": "eastmoney"
                     })
 
@@ -333,3 +336,52 @@ class MacroCollector:
             print(f"_collect_eastmoney失败: {e}")
 
         return results[:max_count]
+
+    def _fetch_eastmoney_article(self, url: str) -> str:
+        """抓取eastmoney文章正文"""
+        import requests
+        from bs4 import BeautifulSoup
+
+        if not url:
+            return ""
+
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Referer': 'https://finance.eastmoney.com/',
+            }
+            resp = requests.get(url, headers=headers, timeout=15)
+            resp.encoding = 'utf-8'
+
+            soup = BeautifulSoup(resp.text, 'html.parser')
+
+            # 移除脚本和样式
+            for tag in soup(['script', 'style', 'nav', 'header', 'footer']):
+                tag.decompose()
+
+            # 查找文章主体 - eastmoney通常在div.article-content或div.news-content
+            article = soup.find('div', class_='article-content') or \
+                     soup.find('div', class_='news-content') or \
+                     soup.find('div', id='ContentBody') or \
+                     soup.find('div', class_='detail')
+
+            if article:
+                # 提取所有段落
+                paragraphs = article.find_all('p')
+                if paragraphs:
+                    text = '\n'.join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
+                    return text
+
+                # 直接获取文本
+                return article.get_text(separator='\n', strip=True)
+
+            # 备选：查找最大的文本块
+            body = soup.find('body')
+            if body:
+                return body.get_text(separator='\n', strip=True)[:5000]
+
+        except Exception as e:
+            print(f"_fetch_eastmoney_article失败: {e}")
+
+        return ""
