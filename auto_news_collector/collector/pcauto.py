@@ -185,32 +185,67 @@ class PcautoCollector:
     def _search_sogou(self, query: str, car_name: str, pub_date: Optional[datetime]) -> Optional[str]:
         """搜狗搜索"""
         import urllib.parse
+        import time
+        time.sleep(2)  # 避免触发验证
+
         url = f"https://www.sogou.com/web?query={urllib.parse.quote(query)}&ie=utf8"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://www.sogou.com/'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': 'https://www.sogou.com/',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
-        resp = requests.get(url, headers=headers, timeout=15)
+        resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+
+        # 检测编码
+        resp = self._fix_encoding(resp)
+
+        # 检查是否被拦截
+        if self._is_blocked(resp.text):
+            print(f"  [Pcauto] 搜狗触发验证，跳过")
+            return None
+
         return self._extract_content_from_search_resp(resp.text, car_name, pub_date)
 
     def _search_baidu(self, query: str, car_name: str, pub_date: Optional[datetime]) -> Optional[str]:
         """百度搜索"""
         import urllib.parse
+        import time
+        time.sleep(2)
+
         url = f"https://www.baidu.com/s?wd={urllib.parse.quote(query)}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         }
         resp = requests.get(url, headers=headers, timeout=15)
+        resp = self._fix_encoding(resp)
+
+        if self._is_blocked(resp.text):
+            print(f"  [Pcauto] 百度触发验证，跳过")
+            return None
+
         return self._extract_content_from_search_resp(resp.text, car_name, pub_date)
 
     def _search_bing(self, query: str, car_name: str, pub_date: Optional[datetime]) -> Optional[str]:
         """必应搜索"""
         import urllib.parse
+        import time
+        time.sleep(2)
+
         url = f"https://cn.bing.com/search?q={urllib.parse.quote(query)}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
         resp = requests.get(url, headers=headers, timeout=15)
+        resp = self._fix_encoding(resp)
+
+        if self._is_blocked(resp.text):
+            print(f"  [Pcauto] 必应触发验证，跳过")
+            return None
+
         return self._extract_content_from_search_resp(resp.text, car_name, pub_date)
 
     def _extract_content_from_search_resp(
@@ -289,15 +324,29 @@ class PcautoCollector:
             url = result['url']
             try:
                 headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
                 }
                 resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
-                resp.encoding = resp.apparent_encoding or 'utf-8'
+
+                # 修复编码
+                resp = self._fix_encoding(resp)
+
+                # 检查是否被拦截
+                if self._is_blocked(resp.text):
+                    print(f"  [Pcauto] 链接触发验证: {url[:50]}")
+                    continue
 
                 # 提取正文
                 content = self._extract_article_content(resp.text)
 
-                if content and len(content) > 50:
+                if content and len(content) > 100:
+                    # 检查是否为新闻页面
+                    if not self._is_news_page(url, resp.text):
+                        print(f"  [Pcauto] 非新闻页面跳过: {url[:50]}")
+                        continue
+
                     # 时间校验
                     if pub_date and pub_date.year < 2026:
                         content = f"[时间较早，可靠性有限]\n{content}"
@@ -314,13 +363,101 @@ class PcautoCollector:
         """解析搜狗重定向链接，获取真实URL"""
         try:
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Referer': 'https://www.sogou.com/',
             }
             resp = requests.get(redirect_url, headers=headers, timeout=10, allow_redirects=True)
             return resp.url
         except:
             return None
+
+    def _fix_encoding(self, resp: requests.Response) -> requests.Response:
+        """修复响应编码问题"""
+        # 尝试检测编码
+        encodings = ['utf-8', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin1']
+
+        # 先尝试chardet
+        try:
+            import chardet
+            detected = chardet.detect(resp.content)
+            if detected and detected.get('encoding'):
+                encodings.insert(0, detected['encoding'])
+        except:
+            pass
+
+        # 尝试每种编码
+        for enc in encodings:
+            try:
+                resp.encoding = enc
+                test_text = resp.text
+                # 检查是否乱码（检查是否有大量不可见字符）
+                if '�' not in test_text[:1000] and len(test_text) > 100:
+                    return resp
+            except:
+                continue
+
+        # 最后尝试apparent_encoding
+        try:
+            resp.encoding = resp.apparent_encoding
+        except:
+            resp.encoding = 'utf-8'
+
+        return resp
+
+    def _is_blocked(self, text: str) -> bool:
+        """检查是否被搜索引擎拦截（验证码页面）"""
+        block_patterns = [
+            '验证码',
+            '请协助验证',
+            '自动程序',
+            '验证正常行为',
+            'SourceVerifyCode',
+            '此验证码用于确认',
+        ]
+        return any(p in text for p in block_patterns)
+
+    def _is_news_page(self, url: str, html: str) -> bool:
+        """判断是否为新闻页面（非车型说明页）"""
+        from bs4 import BeautifulSoup
+
+        # 新闻页面通常包含这些特征
+        news_indicators = [
+            'news',      # URL含news
+            'article',   # URL含article
+            'report',    # URL含report
+            'preview',   # 可能是文章预览
+        ]
+
+        page_indicators = [
+            '车型',      # 车型介绍页
+            '报价',      # 报价页
+            '图片',      # 图片页
+            '视频',      # 视频页
+            '参数',      # 参数页
+            '配置',      # 配置页
+        ]
+
+        # URL检查
+        url_lower = url.lower()
+        for indicator in page_indicators:
+            if indicator in url_lower:
+                return False
+
+        # 内容检查
+        soup = BeautifulSoup(html, 'html.parser')
+        text = soup.get_text().lower()
+
+        # 如果URL明显是新闻，且正文较长，可能是新闻页
+        for indicator in news_indicators:
+            if indicator in url_lower:
+                return True
+
+        # 如果标题/正文短，链接多，可能是列表页
+        title = soup.find('title')
+        if title and len(title.get_text()) < 30:
+            return False
+
+        return True
 
     def _extract_article_content(self, html: str) -> str:
         """从HTML中提取文章正文"""
