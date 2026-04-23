@@ -220,42 +220,46 @@ class AutoinfoCollector:
         return results[:max_count]
 
     def _fetch_article_content(self, url: str) -> str:
-        """抓取文章正文"""
+        """使用Playwright抓取SPA网站的文章正文"""
         if not url:
             return ""
 
         try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Referer': 'https://www.autoinfo.org.cn/',
-            }
-            resp = requests.get(url, headers=headers, timeout=15)
-            resp.encoding = 'utf-8'
+            from playwright.sync_api import sync_playwright
 
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(resp.text, 'html.parser')
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
 
-            # 移除脚本和样式
-            for tag in soup(['script', 'style', 'nav', 'header', 'footer']):
-                tag.decompose()
+                try:
+                    page.goto(url, timeout=30000)
+                    # 等待内容加载
+                    page.wait_for_load_state("networkidle", timeout=15000)
+                    # 等待文章主体出现
+                    page.wait_for_selector("div.policy-content, div.article-content, div.detail, #ContentBody", timeout=10000)
 
-            # 查找文章主体
-            article = soup.find('div', class_='article-content') or \
-                     soup.find('div', class_='policy-content') or \
-                     soup.find('div', id='ContentBody') or \
-                     soup.find('div', class_='detail')
+                    # 获取正文
+                    article = page.query_selector("div.policy-content") or \
+                            page.query_selector("div.article-content") or \
+                            page.query_selector("div.detail") or \
+                            page.query_selector("#ContentBody")
 
-            if article:
-                paragraphs = article.find_all('p')
-                if paragraphs:
-                    text = '\n'.join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
-                    return text
-                return article.get_text(separator='\n', strip=True)
+                    if article:
+                        # 提取所有段落
+                        paragraphs = article.query_selector_all("p")
+                        if paragraphs:
+                            texts = [p.inner_text().strip() for p in paragraphs if p.inner_text().strip()]
+                            return "\n".join(texts)
 
-            body = soup.find('body')
-            if body:
-                return body.get_text(separator='\n', strip=True)[:5000]
+                        return article.inner_text()
+
+                    # 备选：获取body文本
+                    body = page.query_selector("body")
+                    if body:
+                        return body.inner_text()[:5000]
+
+                finally:
+                    browser.close()
 
         except Exception as e:
             print(f"_fetch_article_content失败: {e}")
