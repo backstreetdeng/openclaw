@@ -18,6 +18,7 @@ class AutoinfoCollector:
         self.api_new_policy = "https://www.autoinfo.org.cn/prod-api/api/policy/ttPolicy/newPolicy"
         self.api_policy_report = "https://www.autoinfo.org.cn/prod-api/api/policy/ttPolicyReport/policyReport"
         self.include_keywords = ["消费", "促销费", "以旧换新", "补贴", "购车", "购车补贴", "补贴细则"]
+        self._engine_index = 0  # 轮询计数器
 
     def collect(self, start_date: datetime, end_date: datetime, max_count: int = 10) -> List[Dict]:
         results = []
@@ -160,14 +161,14 @@ class AutoinfoCollector:
         return results[:max_count]
 
     def _fetch_content_via_search(self, title: str) -> dict:
-        """用标题在多个搜索引擎搜索，获取正文和URL，总超时30秒"""
+        """用标题在一个搜索引擎搜索（轮询分配），获取正文和URL，总超时25秒"""
         if not title:
             return {"content": "", "url": ""}
 
         start_time = time.time()
-        max_total_time = 30  # 总超时30秒
+        max_total_time = 25  # 总超时25秒
 
-        # 搜索引勤列表（不限网站，广撒网）
+        # 轮询分配引擎：每条新闻只用1个引擎，避免重复请求
         engines = [
             ("百度", self._search_baidu),
             ("360", self._search_360),
@@ -175,20 +176,19 @@ class AutoinfoCollector:
             ("必应", self._search_bing),
         ]
 
-        for engine_name, search_func in engines:
-            # 检查总超时
-            if time.time() - start_time > max_total_time:
-                print(f"  [Autoinfo] 总超时，放弃搜索")
-                break
+        idx = self._engine_index % len(engines)
+        self._engine_index += 1
 
-            try:
-                result = search_func(title)
-                if result and result.get("content") and len(result.get("content", "")) > 50:
-                    print(f"  [Autoinfo] {engine_name}获取成功")
-                    return result
-            except Exception as e:
-                print(f"  [Autoinfo] {engine_name}失败: {e}")
-                continue
+        engine_name = engines[idx][0]
+        search_func = engines[idx][1]
+
+        try:
+            result = search_func(title)
+            if result and result.get("content") and len(result.get("content", "")) > 30:
+                print(f"  [Autoinfo] {engine_name}获取成功")
+                return result
+        except Exception as e:
+            print(f"  [Autoinfo] {engine_name}失败: {e}")
 
         return {"content": "", "url": ""}
 
