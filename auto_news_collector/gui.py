@@ -897,6 +897,7 @@ class MainWindow(QMainWindow):
                     current_step += 1
                     self.comm.progress_signal.emit(int(current_step / total_steps * 100))
                     results[domain] = domain_results
+                    continue  # 跳过后续URL处理
                     continue
 
                 elif "sub_domains" in domain_config:
