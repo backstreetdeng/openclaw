@@ -146,14 +146,18 @@ class PcautoCollector:
         Returns:
             str: 新闻正文内容
         """
-        # 生成搜索关键词
+        # 生成搜索关键词：优先站内搜索（site:pcauto.com.cn）
         if car_type == "新车":
             queries = [
+                f"{car_name} 上市 site:pcauto.com.cn",
+                f"{car_name} site:pcauto.com.cn 上市",
                 f"{car_name} 上市",
                 car_name,
             ]
         else:  # 改款
             queries = [
+                f"{car_name} 改款 上市 site:pcauto.com.cn",
+                f"{car_name} 最新消息 site:pcauto.com.cn",
                 f"{car_name} 改款 上市",
                 f"{car_name} 最新消息",
                 f"{car_name} 上市",
