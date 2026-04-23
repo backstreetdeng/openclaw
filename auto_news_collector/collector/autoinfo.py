@@ -143,9 +143,12 @@ class AutoinfoCollector:
         return results[:max_count]
 
     def _fetch_content_via_search(self, title: str) -> str:
-        """用标题在多个搜索引擎搜索，获取正文"""
+        """用标题在多个搜索引擎搜索，获取正文，总超时30秒"""
         if not title:
             return ""
+
+        start_time = time.time()
+        max_total_time = 30  # 总超时30秒
 
         # 搜索引勤列表（不限网站，广撒网）
         engines = [
@@ -156,6 +159,11 @@ class AutoinfoCollector:
         ]
 
         for engine_name, search_func in engines:
+            # 检查总超时
+            if time.time() - start_time > max_total_time:
+                print(f"  [Autoinfo] 总超时，放弃搜索")
+                break
+
             try:
                 result = search_func(title)
                 if result and len(result) > 50:
@@ -168,7 +176,7 @@ class AutoinfoCollector:
         return title
 
     def _search_bing(self, query: str) -> str:
-        time.sleep(random.uniform(2, 4))
+        time.sleep(random.uniform(1, 2))
 
         url = f"https://cn.bing.com/search?q={urllib.parse.quote(query)}"
         headers = {
@@ -177,7 +185,7 @@ class AutoinfoCollector:
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
 
-        resp = requests.get(url, headers=headers, timeout=20)
+        resp = requests.get(url, headers=headers, timeout=10)
         resp.encoding = 'utf-8'
 
         if self._is_blocked(resp.text):
@@ -186,7 +194,7 @@ class AutoinfoCollector:
         return self._extract_content(resp.text)
 
     def _search_baidu(self, query: str) -> str:
-        time.sleep(random.uniform(2, 4))
+        time.sleep(random.uniform(1, 2))
 
         url = f"https://www.baidu.com/s?wd={urllib.parse.quote(query)}"
         headers = {
@@ -195,7 +203,7 @@ class AutoinfoCollector:
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         }
 
-        resp = requests.get(url, headers=headers, timeout=20)
+        resp = requests.get(url, headers=headers, timeout=10)
         resp.encoding = 'utf-8'
 
         if self._is_blocked(resp.text):
@@ -204,7 +212,7 @@ class AutoinfoCollector:
         return self._extract_content(resp.text)
 
     def _search_360(self, query: str) -> str:
-        time.sleep(random.uniform(2, 4))
+        time.sleep(random.uniform(1, 2))
 
         url = f"https://www.so.com/s?q={urllib.parse.quote(query)}"
         headers = {
@@ -213,7 +221,7 @@ class AutoinfoCollector:
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         }
 
-        resp = requests.get(url, headers=headers, timeout=20)
+        resp = requests.get(url, headers=headers, timeout=10)
         resp.encoding = 'utf-8'
 
         if self._is_blocked(resp.text):
@@ -222,7 +230,7 @@ class AutoinfoCollector:
         return self._extract_content(resp.text)
 
     def _search_sogou(self, query: str) -> str:
-        time.sleep(random.uniform(2, 4))
+        time.sleep(random.uniform(1, 2))
 
         url = f"https://www.sogou.com/web?query={urllib.parse.quote(query)}"
         headers = {
@@ -231,7 +239,7 @@ class AutoinfoCollector:
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         }
 
-        resp = requests.get(url, headers=headers, timeout=20)
+        resp = requests.get(url, headers=headers, timeout=10)
         resp.encoding = 'utf-8'
 
         if self._is_blocked(resp.text):
@@ -257,7 +265,7 @@ class AutoinfoCollector:
 
             if href.startswith('/link?url='):
                 try:
-                    resp = requests.get(href, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10, allow_redirects=True)
+                    resp = requests.get(href, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5, allow_redirects=True)
                     real_url = resp.url
                 except:
                     continue
@@ -272,14 +280,14 @@ class AutoinfoCollector:
         if not results:
             return None
 
-        # 遍历搜索结果，尝试获取正文
-        for result in results[:5]:
+        # 只尝试前3个URL，减少时间
+        for result in results[:3]:
             try:
                 headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 }
-                resp = requests.get(result['url'], headers=headers, timeout=15)
+                resp = requests.get(result['url'], headers=headers, timeout=8)
                 resp.encoding = 'utf-8'
 
                 soup = BeautifulSoup(resp.text, 'html.parser')
