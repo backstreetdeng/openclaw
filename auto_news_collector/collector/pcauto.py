@@ -155,8 +155,8 @@ class PcautoCollector:
         # 生成搜索关键词：多站点轮询（汽车之家/太平洋/易车/懂车帝/有驾/爱卡）
         # 优先搜太平洋，如果没有好结果，尝试其他权威网站
         sites = [
-            "site:pcauto.com.cn",
             "site:autohome.com.cn",
+            "site:pcauto.com.cn",
             "site:bitauto.com",
             "site:dongchedi.com",
             "site:yoojia.com",
