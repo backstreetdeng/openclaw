@@ -74,12 +74,16 @@ class AutoinfoCollector:
                     if not (cond1 or cond2):
                         continue
 
-                    # 用搜索引擎获取正文和URL
+                    # 优先用搜索引擎获取正文和URL（如果搜索失败则用autoinfo链接+标题）
                     search_result = self._fetch_content_via_search(title)
 
-                    # 优先用搜索结果的URL和正文
                     article_url = search_result.get("url") or f"https://www.autoinfo.org.cn/#/policy/dynamic/index?id={article_id}" if article_id else ""
-                    content = search_result.get("content") or title
+
+                    # 如果搜索返回了有效正文（>30字符），则使用；否则尝试API摘要
+                    content = search_result.get("content", "")
+                    if not content or len(content) < 30:
+                        summary = record.get('summary', '') or record.get('description', '') or ''
+                        content = summary if len(summary) > 20 else title
 
                     results.append({
                         "title": title,
@@ -127,12 +131,17 @@ class AutoinfoCollector:
                     if pub_date and not (start_date <= pub_date <= end_date):
                         continue
 
-                    # 用搜索引擎获取正文和URL
+                    # 优先用搜索引擎获取正文和URL（如果搜索失败则用autoinfo链接+标题）
                     search_result = self._fetch_content_via_search(title)
 
-                    # 优先用搜索结果的URL和正文
                     article_url = search_result.get("url") or f"https://www.autoinfo.org.cn/#/policy/dynamic/index?id={article_id}" if article_id else ""
-                    content = search_result.get("content") or title
+
+                    # 如果搜索返回了有效正文（>50字符），则使用；否则用标题
+                    content = search_result.get("content", "")
+                    if not content or len(content) < 50:
+                        # 搜索失败时，尝试从API摘要获取有价值的内容
+                        summary = record.get('summary', '') or record.get('description', '') or ''
+                        content = summary if len(summary) > 50 else title
 
                     results.append({
                         "title": title,
