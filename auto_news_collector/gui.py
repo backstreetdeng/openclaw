@@ -880,7 +880,26 @@ class MainWindow(QMainWindow):
                 domain_config = DOMAINS[domain]
                 domain_results = []
 
-                if "sub_domains" in domain_config:
+                # 政策法规使用专门的AutoinfoCollector
+                if domain == "政策法规":
+                    try:
+                        from collector.autoinfo import AutoinfoCollector
+                        autoinfo = AutoinfoCollector()
+                        policy_news = autoinfo.collect(
+                            start_date=start_date, end_date=end_date,
+                            max_count=domain_config.get("max_count", 10)
+                        )
+                        domain_results.extend(policy_news)
+                        self.comm.log_signal.emit(f"  政策API: +{len(policy_news)}条")
+                    except Exception as e:
+                        self.comm.log_signal.emit(f"  政策API: 失败 - {e}")
+
+                    current_step += 1
+                    self.comm.progress_signal.emit(int(current_step / total_steps * 100))
+                    results[domain] = domain_results
+                    continue
+
+                elif "sub_domains" in domain_config:
                     # 按分领域分别存储
                     sub_domain_results = {}
                     
@@ -973,19 +992,6 @@ class MainWindow(QMainWindow):
 
                         current_step += 1
                         self.comm.progress_signal.emit(int(current_step / total_steps * 100))
-
-                if domain == "政策法规":
-                    try:
-                        from collector.autoinfo import AutoinfoCollector
-                        autoinfo = AutoinfoCollector()
-                        policy_news = autoinfo.collect(
-                            start_date=start_date, end_date=end_date,
-                            max_count=domain_config.get("max_count", 10)
-                        )
-                        domain_results.extend(policy_news)
-                        self.comm.log_signal.emit(f"  政策API: +{len(policy_news)}条")
-                    except Exception as e:
-                        self.comm.log_signal.emit(f"  政策API: 失败 - {e}")
 
                 if domain == "新车上市":
                     try:

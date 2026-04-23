@@ -90,7 +90,13 @@ class AutoinfoCollector:
             response = requests.get(self.api_new_policy, params=params, headers=headers, timeout=30)
             data = response.json()
 
-            records = data.get('data', {}).get('rows', []) if isinstance(data, dict) else []
+            # 调试：打印返回结构
+            if not isinstance(data, dict):
+                print(f"_collect_new_policy: 返回数据类型是 {type(data)}，不是dict")
+                print(f"返回内容: {str(data)[:200]}")
+                return []
+
+            records = data.get('data', {}).get('rows', [])
 
             for record in records:
                 try:
@@ -166,7 +172,13 @@ class AutoinfoCollector:
             response = requests.get(self.api_policy_report, params=params, headers=headers, timeout=30)
             data = response.json()
 
-            records = data.get('data', {}).get('rows', []) if isinstance(data, dict) else []
+            # 调试：打印返回结构
+            if not isinstance(data, dict):
+                print(f"_collect_policy_report: 返回数据类型是 {type(data)}，不是dict")
+                print(f"返回内容: {str(data)[:200]}")
+                return []
+
+            records = data.get('data', {}).get('rows', [])
 
             for record in records:
                 try:
