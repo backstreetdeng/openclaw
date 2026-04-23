@@ -1,0 +1,317 @@
+# -*- coding: utf-8 -*-
+"""
+周度资讯快报采集器
+支持领域1-6.1多选执行，输出本地报告文件
+"""
+
+import requests
+from datetime import datetime, timedelta
+from urllib.parse import urljoin
+import time
+import json
+import os
+
+class WeeklyNewsCollector:
+    """周度资讯快报采集器"""
+    
+    # 统计周期：上周六 ~ 本周五
+    PERIOD_START = None  # 自动计算
+    PERIOD_END = None    # 自动计算
+    
+    # 领域1-6.1的URL和配置
+    URLS = {
+        # ========== 领域1: 行业动态 ==========
+        "industry": {
+            "name": "行业动态",
+            "urls": [
+                "https://auto.gasgoo.com/auto-news/C-103",  # 行业
+                "https://auto.gasgoo.com/auto-news/C-106",  # 车企
+                "https://auto.gasgoo.com/auto-news/C-107",  # 供应链
+                "https://auto.gasgoo.com/auto-news/C-108",  # 智能网联
+                "https://auto.gasgoo.com/auto-news/C-109",  # 新能源
+                "https://auto.gasgoo.com/auto-news/C-110",  # 新技术
+                "https://auto.gasgoo.com/auto-news/C-303",  # 销量
+                "https://auto.gasgoo.com/auto-news/C-409",  # 高端访谈
+                "https://auto.gasgoo.com/auto-news/C-501",  # 内参
+                "https://auto.gasgoo.com/auto-news/C-601",  # 上市公司
+            ],
+            "keywords": ["税", "电池", "锂矿", "原材料", "油"],
+            "max_items": 10,
+            "filter_type": "include_keywords"  # 包含任一关键字
+        },
+        
+        # ========== 领域2: 企业要闻 ==========
+        "company": {
+            "name": "企业要闻",
+            "urls": [
+                "https://auto.gasgoo.com/automaker/C-109"
+            ],
+            "exclude_keywords": ["交付", "召回", "营收", "销量榜", "什么", "推荐", "同比", "环比", "财报"],
+            "max_items": 10,
+            "filter_type": "exclude_keywords",  # 排除关键字
+            "brand_classify": True  # 需要品牌分类
+        },
+        
+        # ========== 领域3: 高层动态 ==========
+        "executive": {
+            "name": "高层动态",
+            "urls": [
+                "https://auto.gasgoo.com/interview/C-303"
+            ],
+            "max_items": 10,
+            "filter_type": "none"
+        },
+        
+        # ========== 领域4: 零部件 ==========
+        "parts": {
+            "name": "零部件",
+            "urls": [
+                "https://auto.gasgoo.com/parts-news/C-103"
+            ],
+            "max_items": 10,
+            "filter_type": "none"
+        },
+        
+        # ========== 领域5: 新技术/新趋势 ==========
+        "tech": {
+            "name": "新技术/新趋势",
+            "sub_areas": {
+                "nev": {
+                    "name": "新能源技术",
+                    "urls": ["https://auto.gasgoo.com/nev/C-501"],
+                    "max_items": 5
+                },
+                "smart": {
+                    "name": "智能网联技术",
+                    "urls": ["https://auto.gasgoo.com/smart-connected/C-601"],
+                    "max_items": 5
+                },
+                "other": {
+                    "name": "其他关键技术",
+                    "urls": ["https://auto.gasgoo.com/new-tech/C-409"],
+                    "max_items": 5
+                }
+            }
+        },
+        
+        # ========== 领域6.1: 新车上市-盖世 ==========
+        "new_car_gasgoo": {
+            "name": "新车上市-盖世",
+            "urls": [
+                "https://auto.gasgoo.com/new-cars/C-107"
+            ],
+            "keywords": ["上市", "预售"],
+            "max_items": 10,
+            "filter_type": "include_keywords"
+        }
+    }
+    
+    # 品牌分类映射
+    BRAND_CLASSIFY = {
+        "豪华品牌": ["奥迪", "宝马", "奔驰", "保时捷", "特斯拉", "红旗", "凯迪拉克", "沃尔沃"],
+        "合资品牌": ["大众", "丰田", "本田", "日产", "现代", "福特", "别克", "奥迪", "宝马", "奔驰"],
+        "自主品牌": ["比亚迪", "长安", "吉利", "长城", "奇瑞", "广汽", "上汽", "一汽", "东风"],
+        "新势力": ["理想", "蔚来", "小鹏", "零跑", "问界", "极氪", "智己", "小米"]
+    }
+    
+    def __init__(self):
+        self._calculate_period()
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        self.results = {}
+    
+    def _calculate_period(self):
+        """计算统计周期：上周六 ~ 本周五"""
+        today = datetime.now()
+        # 找到本周五
+        days_until_friday = (4 - today.weekday()) % 7  # weekday(): Mon=0, Fri=4
+        if days_until_friday == 0 and today.hour < 12:
+            days_until_friday = 0
+        elif days_until_friday == 0:
+            days_until_friday = 7
+        self.PERIOD_END = today - timedelta(days=today.weekday() - 4)  # 本周五
+        self.PERIOD_END = self.PERIOD_END.replace(hour=23, minute=59, second=59)
+        # 上周六
+        self.PERIOD_START = self.PERIOD_END - timedelta(days=6)
+        self.PERIOD_START = self.PERIOD_START.replace(hour=0, minute=0, second=0)
+    
+    def _parse_gasgoo_page(self, html_content):
+        """解析盖世汽车页面，提取新闻列表"""
+        # 盖世汽车页面通常是JSON或列表结构
+        # 这里用简单的文本解析演示
+        items = []
+        # 实际应用中需要根据页面结构调整解析逻辑
+        return items
+    
+    def _filter_by_keywords(self, items, keywords, filter_type="include"):
+        """关键字过滤"""
+        filtered = []
+        for item in items:
+            title = item.get("title", "")
+            if filter_type == "include":
+                if any(k in title for k in keywords):
+                    filtered.append(item)
+            elif filter_type == "exclude":
+                if not any(k in title for k in keywords):
+                    filtered.append(item)
+        return filtered
+    
+    def _classify_brand(self, title):
+        """品牌分类"""
+        for category, brands in self.BRAND_CLASSIFY.items():
+            for brand in brands:
+                if brand in title:
+                    return category
+        return "其他"
+    
+    def _is_in_period(self, item):
+        """检查是否在统计周期内"""
+        if "publish_date" not in item:
+            return True
+        pub_date = item.get("publish_date", "")
+        # 解析日期并比较
+        return True
+    
+    def collect(self, field_ids):
+        """
+        执行采集
+        
+        Args:
+            field_ids: list[str] - 要采集的领域ID，如 ["industry", "company"]
+        """
+        for field_id in field_ids:
+            if field_id not in self.URLS:
+                print(f"[警告] 未知的领域ID: {field_id}")
+                continue
+            
+            config = self.URLS[field_id]
+            print(f"\n{'='*50}")
+            print(f"开始采集: {config['name']}")
+            print(f"{'='*50}")
+            
+            if field_id == "tech":
+                # 领域5: 新技术/新趋势（3个子领域）
+                self.results[field_id] = {"name": config["name"], "sub_areas": {}}
+                for sub_id, sub_config in config["sub_areas"].items():
+                    items = self._collect_single_field(sub_config["urls"], None, sub_config["max_items"])
+                    self.results[field_id]["sub_areas"][sub_id] = {
+                        "name": sub_config["name"],
+                        "items": items
+                    }
+                    print(f"  - {sub_config['name']}: {len(items)}条")
+            else:
+                filter_type = config.get("filter_type", "none")
+                keywords = config.get("keywords", config.get("exclude_keywords", []))
+                max_items = config.get("max_items", 10)
+                
+                items = self._collect_single_field(
+                    config["urls"], 
+                    keywords if filter_type != "none" else None,
+                    max_items,
+                    filter_type
+                )
+                
+                # 品牌分类（如果需要）
+                if config.get("brand_classify"):
+                    for item in items:
+                        item["brand_category"] = self._classify_brand(item.get("title", ""))
+                
+                self.results[field_id] = {
+                    "name": config["name"],
+                    "items": items
+                }
+                print(f"  采集完成: {len(items)}条")
+            
+            time.sleep(0.5)  # 礼貌延迟
+        
+        return self.results
+    
+    def _collect_single_field(self, urls, keywords, max_items, filter_type="include"):
+        """采集单个领域"""
+        all_items = []
+        
+        for url in urls:
+            try:
+                response = self.session.get(url, timeout=10)
+                response.raise_for_status()
+                response.encoding = "utf-8"
+                
+                # 解析页面（实际需要根据页面结构调整）
+                items = self._parse_gasgoo_page(response.text)
+                
+                # 关键字过滤
+                if keywords:
+                    items = self._filter_by_keywords(items, keywords, filter_type)
+                
+                all_items.extend(items)
+                
+            except Exception as e:
+                print(f"  [错误] 抓取失败 {url}: {str(e)}")
+            
+            time.sleep(0.3)
+        
+        # 按时间排序并截取
+        all_items.sort(key=lambda x: x.get("publish_date", ""), reverse=True)
+        return all_items[:max_items]
+    
+    def export_to_markdown(self, output_dir):
+        """导出为Markdown报告"""
+        os.makedirs(output_dir, exist_ok=True)
+        date_str = datetime.now().strftime("%Y%m%d")
+        filename = f"周度资讯快报_{date_str}.md"
+        filepath = os.path.join(output_dir, filename)
+        
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(f"# 周度资讯快报 {date_str}\n\n")
+            f.write(f"**统计周期**: {self.PERIOD_START.strftime('%Y-%m-%d')} ~ {self.PERIOD_END.strftime('%Y-%m-%d')}\n\n")
+            f.write("---\n\n")
+            
+            for field_id, data in self.results.items():
+                f.write(f"## {data['name']}\n\n")
+                
+                if field_id == "tech":
+                    for sub_id, sub_data in data["sub_areas"].items():
+                        f.write(f"### {sub_data['name']}\n\n")
+                        for item in sub_data["items"]:
+                            f.write(f"- **{item['title']}** - {item.get('publish_date', 'N/A')}\n")
+                        f.write("\n")
+                else:
+                    if data["items"]:
+                        for item in data["items"]:
+                            brand_cat = item.get("brand_category", "")
+                            brand_info = f" [{brand_cat}]" if brand_cat else ""
+                            f.write(f"- **{item['title']}**{brand_info} - {item.get('publish_date', 'N/A')}\n")
+                    else:
+                        f.write("*无数据*\n")
+                f.write("\n")
+        
+        print(f"\n报告已保存: {filepath}")
+        return filepath
+
+
+def main():
+    """主函数 - 演示用法"""
+    collector = WeeklyNewsCollector()
+    
+    # 选择要采集的领域（可多选）
+    selected_fields = [
+        "industry",    # 领域1: 行业动态
+        "company",     # 领域2: 企业要闻
+        "executive",   # 领域3: 高层动态
+        "parts",       # 领域4: 零部件
+        "tech",        # 领域5: 新技术/新趋势
+        "new_car_gasgoo"  # 领域6.1: 新车上市-盖世
+    ]
+    
+    # 执行采集
+    collector.collect(selected_fields)
+    
+    # 导出报告
+    output_dir = r"E:\openclaw\workspace\weekly_news"
+    collector.export_to_markdown(output_dir)
+
+
+if __name__ == "__main__":
+    main()
