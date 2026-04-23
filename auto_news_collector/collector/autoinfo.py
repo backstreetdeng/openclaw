@@ -197,7 +197,7 @@ class AutoinfoCollector:
 
         url = f"https://cn.bing.com/search?q={urllib.parse.quote(query)}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
@@ -208,16 +208,72 @@ class AutoinfoCollector:
         if self._is_blocked(resp.text):
             return {"content": "", "url": ""}
 
-        return self._extract_content(resp.text)
+        return self._extract_bing_content(resp.text)
+
+    def _extract_bing_content(self, html: str) -> dict:
+        """从必应搜索结果提取正文和URL（必应使用li.b_algo结构）"""
+        if len(html) < 10000:
+            return {"content": "", "url": ""}
+
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # 必应使用 li.b_algo 选择器
+        results = []
+        for item in soup.select('li.b_algo'):
+            a = item.select_one('h2 a') or item.select_one('a')
+            if not a:
+                continue
+            href = a.get('href', '')
+            if href.startswith('http') and 'baidu.com' not in href:
+                results.append({'url': href})
+
+        if not results:
+            return {"content": "", "url": ""}
+
+        # 尝试前2个URL
+        for result in results[:2]:
+            try:
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                }
+                resp = requests.get(result['url'], headers=headers, timeout=8)
+                resp.encoding = 'utf-8'
+
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                for tag in soup(['script', 'style', 'nav', 'header', 'footer']):
+                    tag.decompose()
+
+                article = (soup.find('div', class_='article-content') or
+                          soup.find('div', class_='news-content') or
+                          soup.find('div', id='ContentBody') or
+                          soup.find('article') or
+                          soup.find('div', class_='detail') or
+                          soup.find('div', class_='content'))
+
+                if article:
+                    paragraphs = article.find_all('p')
+                    if paragraphs:
+                        text = '\n'.join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
+                        if len(text) > 30:
+                            return {"content": text, "url": result['url']}
+                    text = article.get_text(separator='\n', strip=True)
+                    if len(text) > 30:
+                        return {"content": text, "url": result['url']}
+            except:
+                continue
+
+        return {"content": "", "url": ""}
 
     def _search_baidu(self, query: str) -> dict:
         time.sleep(random.uniform(1, 2))
 
         url = f"https://www.baidu.com/s?wd={urllib.parse.quote(query)}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Referer': 'https://www.baidu.com/',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
 
         resp = requests.get(url, headers=headers, timeout=10)
@@ -233,7 +289,7 @@ class AutoinfoCollector:
 
         url = f"https://www.so.com/s?q={urllib.parse.quote(query)}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Referer': 'https://www.360.cn/',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         }
@@ -251,7 +307,7 @@ class AutoinfoCollector:
 
         url = f"https://www.sogou.com/web?query={urllib.parse.quote(query)}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Referer': 'https://www.sogou.com/',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         }
