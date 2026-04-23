@@ -345,8 +345,8 @@ class PcautoCollector:
                 content = self._extract_article_content(resp.text)
 
                 if content and len(content) > 100:
-                    # 检查是否为新闻页面
-                    if not self._is_news_page(url, resp.text):
+                    # 检查是否为新闻页面（结合URL和正文长度）
+                    if not self._is_news_page(url, resp.text, len(content)):
                         print(f"  [Pcauto] 非新闻页面跳过: {url[:50]}")
                         continue
 
@@ -419,7 +419,7 @@ class PcautoCollector:
         ]
         return any(p in text for p in block_patterns)
 
-    def _is_news_page(self, url: str, html: str) -> bool:
+    def _is_news_page(self, url: str, html: str, content_length: int = 0) -> bool:
         """判断是否为新闻页面（非车型说明页）"""
         from bs4 import BeautifulSoup
 
@@ -457,6 +457,10 @@ class PcautoCollector:
         # 正文长度检查：如果正文太短，可能不是新闻
         body_text = soup.get_text()
         if len(body_text) < 500:
+            return False
+
+        # 结合正文长度：如果URL是价格相关但正文短，也过滤
+        if 'price' in url_lower and content_length < 1000:
             return False
 
         return True
