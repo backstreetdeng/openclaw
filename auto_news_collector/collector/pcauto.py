@@ -101,12 +101,18 @@ class PcautoCollector:
 
                         # 采集正文（搜索引擎方式）
                         content = ""
+                        news_url = link  # 默认用列表页链接
                         if fetch_content:
-                            content = self._fetch_content_via_search(title, car_type, pub_date)
+                            result = self._fetch_content_via_search(title, car_type, pub_date)
+                            if result:
+                                content = result.get('content', '')
+                                # 如果搜索引擎找到了真实新闻URL，用它替换列表页链接
+                                if result.get('url'):
+                                    news_url = result['url']
 
                         results.append({
                             "title": f"{car_type}-{title}",
-                            "link": link,
+                            "link": news_url,
                             "date": pub_date.strftime("%Y-%m-%d") if pub_date else date_str,
                             "content": content,
                             "source": "pcauto"
@@ -128,14 +134,14 @@ class PcautoCollector:
         car_name: str,
         car_type: str,
         pub_date: Optional[datetime] = None
-    ) -> str:
+    ) -> Dict:
         """
         通过搜索引擎获取车型上市/改款新闻正文
 
         搜索策略：
         - 新车：搜索"车型名 上市" → "车型名"
         - 改款：搜索"车型名 改款 上市" → "车型名 最新消息" → "车型名 上市"
-        搜索引擎：搜狗 → 百度 → 必应 → 简化正文（标题+日期+车型）
+        搜索引擎：必应 → 百度 → 简化正文（标题+日期+车型）
         时间校验：2026年以前的新闻会被标记为不可靠
 
         Args:
@@ -144,7 +150,7 @@ class PcautoCollector:
             pub_date: 发布日期
 
         Returns:
-            str: 新闻正文内容
+            Dict: {"content": str, "url": str} 或 None
         """
         # 生成搜索关键词：优先站内搜索（site:pcauto.com.cn）
         if car_type == "新车":
@@ -183,7 +189,7 @@ class PcautoCollector:
 
         # 兜底：返回"车型：xxx"
         print(f"  [Pcauto] 搜索引擎均失败，使用兜底: {car_name}")
-        return f"车型：{car_name}"
+        return {"content": f"车型：{car_name}", "url": ""}
 
     def _search_sogou(self, query: str, car_name: str, pub_date: Optional[datetime]) -> Optional[str]:
         """搜狗搜索"""
@@ -210,7 +216,7 @@ class PcautoCollector:
 
         return self._extract_content_from_search_resp(resp.text, car_name, pub_date)
 
-    def _search_baidu(self, query: str, car_name: str, pub_date: Optional[datetime]) -> Optional[str]:
+    def _search_baidu(self, query: str, car_name: str, pub_date: Optional[datetime]) -> Optional[Dict]:
         """百度搜索"""
         import urllib.parse
         import time
@@ -230,7 +236,7 @@ class PcautoCollector:
 
         return self._extract_content_from_search_resp(resp.text, car_name, pub_date)
 
-    def _search_bing(self, query: str, car_name: str, pub_date: Optional[datetime]) -> Optional[str]:
+    def _search_bing(self, query: str, car_name: str, pub_date: Optional[datetime]) -> Optional[Dict]:
         """必应搜索"""
         import urllib.parse
         import time
@@ -355,7 +361,7 @@ class PcautoCollector:
                     if pub_date and pub_date.year < 2026:
                         content = f"[时间较早，可靠性有限]\n{content}"
 
-                    return content
+                    return {"content": content, "url": real_url}
 
             except Exception as e:
                 print(f"  [Pcauto] 访问链接失败 {url[:50]}: {e}")
