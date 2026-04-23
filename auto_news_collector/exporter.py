@@ -2,6 +2,7 @@
 Word文档导出器 - 使用python-docx生成Word报告
 """
 import os
+import sys
 from datetime import datetime
 from typing import Dict, List
 
@@ -12,6 +13,42 @@ try:
     from docx.enum.style import WD_STYLE_TYPE
 except ImportError:
     Document = None
+
+# KeyBERT摘要工具路径
+KEYBERT_TOOLS_PATH = r'C:\Users\11489\openclaw_tools'
+
+
+def summarize_text(text: str, max_len: int = 250) -> str:
+    """
+    使用KeyBERT工具提炼文本
+
+    Args:
+        text: 原始文本
+        max_len: 最大摘要长度
+
+    Returns:
+        str: 提炼后的摘要文本（200-250字）
+    """
+    if not text or len(text.strip()) == 0:
+        return text
+
+    # 文本太短直接返回
+    if len(text) <= 200:
+        return text
+
+    try:
+        # 添加KeyBERT工具路径
+        if KEYBERT_TOOLS_PATH not in sys.path:
+            sys.path.insert(0, KEYBERT_TOOLS_PATH)
+
+        from keybert_summarizer import summarize
+        return summarize(text, max_len=max_len)
+    except Exception as e:
+        print(f"KeyBERT摘要失败: {e}")
+        # 备用：截取前max_len字符
+        if len(text) > max_len:
+            return text[:max_len] + "..."
+        return text
 
 
 class WordExporter:
@@ -318,4 +355,168 @@ class WordExporter:
                 self._set_font(content_run, "SimSun", Pt(12))
 
             # 空行
+            self.doc.add_paragraph()
+
+
+    def export_summary(
+        self,
+        results: Dict[str, List[Dict]],
+        start_date: datetime,
+        end_date: datetime,
+        output_path: str
+    ):
+        """导出概要Word文档（正文使用KeyBERT摘要提炼）"""
+        if Document is None:
+            raise ImportError('python-docx未安装')
+
+        self.doc = Document()
+        self._setup_styles()
+        self._add_title_summary(start_date, end_date)
+
+        news_results = {}
+        for k, v in results.items():
+            if k.endswith('_分类') or k.endswith('_分领域'):
+                continue
+            if isinstance(v, list):
+                news_results[k] = v
+        total = sum(len(v) for v in news_results.values())
+        self._add_summary(results, total)
+
+        for domain, news_list in results.items():
+            if domain.endswith('_分类') or domain.endswith('_分领域'):
+                continue
+            if not isinstance(news_list, list):
+                continue
+            if domain == '企业要闻' and '企业要闻_分类' in results:
+                self._add_domain_section(domain, [])
+                chinese_nums = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+                categorized = results['企业要闻_分类']
+                for idx, (category, cat_news) in enumerate(categorized.items()):
+                    if isinstance(cat_news, list) and cat_news:
+                        self._add_category_section_summary(f'（{chinese_nums[idx]}）{category}', cat_news)
+            elif domain == '新技术/新趋势' and '新技术/新趋势_分领域' in results:
+                self._add_domain_section(domain, [])
+                chinese_nums = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+                sub_results = results['新技术/新趋势_分领域']
+                for idx, (category, cat_news) in enumerate(sub_results.items()):
+                    if isinstance(cat_news, list) and cat_news:
+                        self._add_category_section_summary(f'（{chinese_nums[idx]}）{category}', cat_news)
+            elif domain == '宏观经济政策' and '宏观经济政策_分领域' in results:
+                self._add_domain_section(domain, [])
+                chinese_nums = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+                sub_results = results['宏观经济政策_分领域']
+                for idx, (category, cat_news) in enumerate(sub_results.items()):
+                    if isinstance(cat_news, list) and cat_news:
+                        self._add_category_section_summary(f'（{chinese_nums[idx]}）{category}', cat_news)
+            elif news_list:
+                self._add_domain_section_summary(domain, news_list)
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        self.doc.save(output_path)
+
+    def _add_title_summary(self, start_date: datetime, end_date: datetime):
+        """添加概要文档标题"""
+        title = self.doc.add_paragraph()
+        title_run = title.add_run('中国汽车产业资讯简报（摘要版）')
+        self._set_font(title_run, 'SimSun', Pt(22), bold=True)
+        title_run.font.color.rgb = RGBColor(0, 51, 102)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        subtitle = self.doc.add_paragraph()
+        subtitle_run = subtitle.add_run(f'{start_date.strftime("%Y年%m月%d日")} - {end_date.strftime("%Y年%m月%d日")}')
+        self._set_font(subtitle_run, 'SimSun', Pt(12))
+        subtitle_run.font.color.rgb = RGBColor(102, 102, 102)
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        note = self.doc.add_paragraph()
+        note_run = note.add_run('（正文已提炼为200-250字摘要）')
+        self._set_font(note_run, 'SimSun', Pt(10))
+        note_run.font.color.rgb = RGBColor(128, 128, 128)
+        note.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        self.doc.add_paragraph()
+
+    def _add_domain_section_summary(self, domain: str, news_list: List[Dict]):
+        """添加领域章节（摘要版）"""
+        if not isinstance(news_list, list):
+            return
+
+        heading = self.doc.add_paragraph()
+        heading_run = heading.add_run(f'【{domain}】')
+        self._set_font(heading_run, 'SimSun', Pt(14), bold=True)
+
+        p = self.doc.add_paragraph()
+        run = p.add_run('─' * 50)
+        run.font.color.rgb = RGBColor(200, 200, 200)
+        self._set_font(run, 'SimSun')
+
+        for i, news in enumerate(news_list, 1):
+            if not isinstance(news, dict):
+                continue
+
+            title_p = self.doc.add_paragraph()
+            title_run = title_p.add_run(f'{i}. {news.get("title", "无标题")}')
+            self._set_font(title_run, 'SimSun', Pt(12), bold=True)
+
+            meta_p = self.doc.add_paragraph()
+            meta_run = meta_p.add_run(f'时间: {news.get("date", "未知日期")}  |  来源: {news.get("source", "未知")}')
+            self._set_font(meta_run, 'SimSun', Pt(10))
+            meta_run.font.color.rgb = RGBColor(128, 128, 128)
+
+            if news.get('link'):
+                link_p = self.doc.add_paragraph()
+                link_run = link_p.add_run(f'{news.get("link", "")}')
+                self._set_font(link_run, 'SimSun', Pt(10))
+                link_run.font.color.rgb = RGBColor(0, 102, 204)
+
+            if news.get('content'):
+                original_content = news.get('content', '')
+                summarized_content = summarize_text(original_content, max_len=250)
+                content_p = self.doc.add_paragraph()
+                content_run = content_p.add_run(summarized_content)
+                self._set_font(content_run, 'SimSun', Pt(12))
+
+            self.doc.add_paragraph()
+
+        end_p = self.doc.add_paragraph()
+        end_run = end_p.add_run('─' * 50)
+        end_run.font.color.rgb = RGBColor(200, 200, 200)
+        self._set_font(end_run, 'SimSun')
+        self.doc.add_paragraph()
+
+    def _add_category_section_summary(self, category: str, news_list: List[Dict]):
+        """添加分领域章节（摘要版）"""
+        if not isinstance(news_list, list):
+            return
+
+        heading = self.doc.add_paragraph()
+        heading_run = heading.add_run(f'  {category}')
+        self._set_font(heading_run, 'SimSun', Pt(12), bold=True)
+
+        for i, news in enumerate(news_list, 1):
+            if not isinstance(news, dict):
+                continue
+
+            title_p = self.doc.add_paragraph()
+            title_run = title_p.add_run(f'{i}. {news.get("title", "无标题")}')
+            self._set_font(title_run, 'SimSun', Pt(12), bold=True)
+
+            meta_p = self.doc.add_paragraph()
+            meta_run = meta_p.add_run(f'时间: {news.get("date", "未知日期")}  |  来源: {news.get("source", "未知")}')
+            self._set_font(meta_run, 'SimSun', Pt(10))
+            meta_run.font.color.rgb = RGBColor(128, 128, 128)
+
+            if news.get('link'):
+                link_p = self.doc.add_paragraph()
+                link_run = link_p.add_run(f'{news.get("link", "")}')
+                self._set_font(link_run, 'SimSun', Pt(10))
+                link_run.font.color.rgb = RGBColor(0, 102, 204)
+
+            if news.get('content'):
+                original_content = news.get('content', '')
+                summarized_content = summarize_text(original_content, max_len=250)
+                content_p = self.doc.add_paragraph()
+                content_run = content_p.add_run(summarized_content)
+                self._set_font(content_run, 'SimSun', Pt(12))
+
             self.doc.add_paragraph()

@@ -523,6 +523,30 @@ class MainWindow(QMainWindow):
         self.export_btn.clicked.connect(self.export_to_word)
         btn_layout.addWidget(self.export_btn)
 
+        # 生成概要Word按钮
+        self.export_summary_btn = QPushButton("📑 生成概要Word")
+        self.export_summary_btn.setEnabled(False)
+        self.export_summary_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.BG_WHITE};
+                color: {self.TEXT_DARK};
+                border: 1px solid {self.BORDER_COLOR};
+                border-radius: 4px;
+                padding: 8px 24px;
+                font-size: 9pt;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                border-color: {self.SUCCESS_GREEN};
+                background-color: #E8F5E9;
+            }}
+            QPushButton:disabled {{
+                color: {self.TEXT_LIGHT};
+            }}
+        """)
+        self.export_summary_btn.clicked.connect(self.export_summary_to_word)
+        btn_layout.addWidget(self.export_summary_btn)
+
         self.stop_btn = QPushButton("⏹ 停止")
         self.stop_btn.setEnabled(False)
         self.stop_btn.setStyleSheet(f"""
@@ -1122,6 +1146,7 @@ class MainWindow(QMainWindow):
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.export_btn.setEnabled(True)
+        self.export_summary_btn.setEnabled(True)
 
         # 排除分类数据，只统计新闻列表
         news_results = {k: v for k, v in results.items() if not k.endswith("_分类")}
@@ -1168,6 +1193,26 @@ class MainWindow(QMainWindow):
             exporter.export(results=self.collection_results, start_date=start_date, end_date=end_date, output_path=filepath)
             self.append_log(f"✅ 已生成: {filename}")
             QMessageBox.information(self, "导出成功", f"Word文档已保存至:\n{filepath}")
+        except Exception as e:
+            QMessageBox.critical(self, "导出失败", str(e))
+
+    def export_summary_to_word(self):
+        """生成概要Word（使用KeyBERT摘要提炼正文）"""
+        if not self.collection_results:
+            QMessageBox.warning(self, "提示", "请先执行采集！")
+            return
+
+        output_dir = self.output_path.text() if "点击" not in self.output_path.text() else DEFAULT_OUTPUT_DIR
+        start_date, end_date = self.get_date_range()
+        filename = f"汽车产业资讯简报_概要版_{start_date.strftime('%Y%m%d')}-{end_date.strftime('%Y%m%d')}_{datetime.now().strftime('%H%M%S')}.docx"
+        filepath = os.path.join(output_dir, filename)
+
+        try:
+            self.append_log(f"\n📑 正在生成概要Word文档（KeyBERT摘要提炼中）...")
+            exporter = WordExporter()
+            exporter.export_summary(results=self.collection_results, start_date=start_date, end_date=end_date, output_path=filepath)
+            self.append_log(f"✅ 已生成: {filename}")
+            QMessageBox.information(self, "导出成功", f"概要Word文档已保存至:\n{filepath}")
         except Exception as e:
             QMessageBox.critical(self, "导出失败", str(e))
 
