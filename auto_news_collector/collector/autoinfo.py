@@ -265,10 +265,16 @@ class AutoinfoCollector:
         return self._extract_content(resp.text)
 
     def _is_blocked(self, text: str) -> bool:
-        return any(p in text for p in ['验证码', '请协助验证', '自动程序', 'SourceVerifyCode'])
+        if len(text) < 10000:  # 太小可能是安全页面
+            return True
+        return any(p in text for p in ['验证码', '请协助验证', '自动程序', 'SourceVerifyCode', '安全验证', '人身认证'])
 
     def _extract_content(self, html: str) -> dict:
         """从搜索结果提取正文和URL，不限制特定网站"""
+        # 太小可能是安全页面，直接返回空
+        if len(html) < 10000:
+            return {"content": "", "url": ""}
+
         soup = BeautifulSoup(html, 'html.parser')
 
         # 查找所有可能的链接
