@@ -345,9 +345,10 @@ class PcautoCollector:
                 content = self._extract_article_content(resp.text)
 
                 if content and len(content) > 100:
-                    # 检查是否为新闻页面（结合URL和正文长度）
-                    if not self._is_news_page(url, resp.text, len(content)):
-                        print(f"  [Pcauto] 非新闻页面跳过: {url[:50]}")
+                    # 检查是否为新闻页面（使用真实URL检查）
+                    real_url = resp.url  # 使用重定向后的真实URL
+                    if not self._is_news_page(real_url, resp.text, len(content)):
+                        print(f"  [Pcauto] 非新闻页面跳过: {real_url[:60]}")
                         continue
 
                     # 时间校验
