@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "skills": {
+    "self-improving-agent": {
+      "version": "3.0.1",
+      "installedAt": 1773329711821
+    },
+    "openclaw-tavily-search": {
+      "version": "0.1.0",
+      "installedAt": 1773330061461
+    },
+    "find-skills": {
+      "version": "0.1.0",
+      "installedAt": 1773330182518
+    },
+    "proactive-agent-lite": {
+      "version": "1.0.0",
+      "installedAt": 1773330541265
+    },
+    "agent-browser": {
+      "version": "0.2.0",
+      "installedAt": 1773330841783
+    },
+    "deep-research-pro": {
+      "version": "1.0.2",
+      "installedAt": 1773970417364
+    },
+    "ddg-search-cli": {
+      "version": "2026.2.15",
+      "installedAt": 1773970441171
+    },
+    "local-file-rag-basic": {
+      "version": "1.0.0",
+      "installedAt": 1774523606980
+    },
+    "openclaw-semantic-memory": {
+      "version": "1.0.0",
+      "installedAt": 1774526491569
+    }
+  }
+}
