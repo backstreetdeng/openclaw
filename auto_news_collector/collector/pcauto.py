@@ -51,70 +51,57 @@ class PcautoCollector:
                     page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
                     page.wait_for_timeout(1000)
 
-                # 查找车辆条目
-                # 选择器: li, .car-item, .list-item 或包含 car's 类的元素
-                items = page.query_selector_all("li, .car-item, .list-item")
-                if not items:
-                    # 备选：查找所有包含 car 的 class 的 div
-                    items = page.query_selector_all("[class*='car']")
+                # 查找车辆条目 - 使用正确的选择器
+                items = page.query_selector_all("a.new-car-show-list-item")
 
-                print(f"PcautoCollector: 找到 {len(items)} 个元素")
+                print(f"PcautoCollector: 找到 {len(items)} 个条目")
 
                 for item in items:
                     if len(results) >= max_count:
                         break
 
                     try:
-                        # 提取车型名称 - 通常在标题位置
-                        title_elem = item.query_selector("a, .tit, .title, h3, h4")
-                        if not title_elem:
-                            continue
-                        title = title_elem.inner_text().strip()
+                        # 获取元素内所有文本，用于判断类型
+                        item_text = item.inner_text()
 
-                        # 提取日期
-                        date_elem = item.query_selector("span, i, .date, .time")
+                        # 判断类型：新车 or 改款
+                        car_type = "新车"
+                        if "改款" in item_text:
+                            car_type = "改款"
+
+                        # 提取日期：从 div.date 元素获取
+                        date_elem = item.query_selector("div.date")
                         date_str = ""
                         if date_elem:
-                            date_str = date_elem.inner_text().strip()
+                            date_str = date_elem.inner_text().strip()  # e.g. "2026年04月28日上市"
 
-                        # 解析日期
+                        # 解析日期：格式 "2026年04月28日上市"
                         pub_date = None
                         if date_str:
                             try:
-                                # 尝试匹配 YYYY-MM-DD 或 YYYY/MM/DD 格式
-                                match = re.search(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})", date_str)
+                                match = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", date_str)
                                 if match:
                                     pub_date = datetime(int(match.group(1)), int(match.group(2)), int(match.group(3)))
                             except:
                                 pass
 
-                        # 日期过滤
+                        # 日期过滤（区间过滤）
                         if pub_date and not (start_date <= pub_date <= end_date):
                             continue
 
-                        # 关键词过滤：只要"上市"或"预售"
-                        if not any(kw in title for kw in ["上市", "预售"]):
-                            continue
+                        # 提取车型名称：第一行文本（去掉类型标识）
+                        lines = item_text.split('\n')
+                        title = lines[1].strip() if len(lines) > 1 else item_text.strip()
 
                         # 提取链接
-                        link_elem = item.query_selector("a")
-                        link = ""
-                        if link_elem:
-                            href = link_elem.get_attribute("href") or ""
-                            link = href if href.startswith("http") else f"https://price.pcauto.com.cn{href}"
-
-                        # 判断类型
-                        car_type = "新车"
-                        if "改款" in title:
-                            car_type = "改款"
-                        elif "预售" in title:
-                            car_type = "预售"
+                        href = item.get_attribute("href") or ""
+                        link = href if href.startswith("http") else f"https://price.pcauto.com.cn{href}"
 
                         results.append({
                             "title": f"{car_type}-{title}",
                             "link": link,
-                            "date": date_str if date_str else (pub_date.strftime("%Y-%m-%d") if pub_date else ""),
-                            "content": f"太平洋汽车：{title}",  # 暂时用标题作为content
+                            "date": pub_date.strftime("%Y-%m-%d") if pub_date else date_str,
+                            "content": f"太平洋汽车：{title}",
                             "source": "pcauto"
                         })
 
