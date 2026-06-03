@@ -7,7 +7,7 @@
     <link href="https://cdn.tailwindcss.com" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.0.3/src/regular/style.css" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
         * {
             margin: 0;
@@ -16,8 +16,11 @@
         }
 
         body {
-            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: #f5f7fa;
+            font-family: 'Inter', 'PingFang SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #F5F7FA;
+            color: #1A202C;
+            font-size: 15px;
+            line-height: 1.5;
         }
 
         /* 自定义滚动条 */
@@ -25,21 +28,28 @@
             width: 6px;
         }
         ::-webkit-scrollbar-track {
-            background: #f1f1f1;
+            background: #F1F5F9;
         }
         ::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
+            background: #CBD5E1;
             border-radius: 3px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: #a1a1a1;
+            background: #94A3B8;
         }
 
-        /* 布局 */
-        .sidebar {
-            width: 240px;
+        /* ========== 布局 ========== */
+        .page-container {
+            display: flex;
             min-height: 100vh;
-            background: linear-gradient(180deg, #1e3a5f 0%, #0f2744 100%);
+        }
+
+        /* ========== 左侧侧边栏 ========== */
+        .sidebar {
+            width: 260px;
+            min-height: 100vh;
+            background: #FFFFFF;
+            border-right: 1px solid #E2E8F0;
             position: fixed;
             left: 0;
             top: 0;
@@ -47,22 +57,66 @@
             flex-direction: column;
         }
 
-        .main-content {
-            margin-left: 240px;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
+        .sidebar-header {
+            padding: 20px 16px;
+            border-bottom: 1px solid #E2E8F0;
         }
 
-        /* 侧边栏样式 */
-        .sidebar-logo {
-            padding: 24px 20px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #003370 0%, #335599 100%);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-icon i {
+            color: #fff;
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1A202C;
+        }
+
+        .logo-sub {
+            font-size: 12px;
+            color: #94A3B8;
         }
 
         .sidebar-nav {
             flex: 1;
             padding: 16px 12px;
+            overflow-y: auto;
+        }
+
+        .nav-section {
+            margin-bottom: 24px;
+        }
+
+        .nav-section-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #4A5568;
+        }
+
+        .nav-section-title i {
+            color: #335599;
+            font-size: 16px;
         }
 
         .nav-item {
@@ -70,97 +124,187 @@
             align-items: center;
             gap: 12px;
             padding: 12px 16px;
-            border-radius: 10px;
-            color: rgba(255,255,255,0.7);
+            border-radius: 6px;
+            color: #4A5568;
             cursor: pointer;
             transition: all 0.2s;
             margin-bottom: 4px;
         }
 
         .nav-item:hover {
-            background: rgba(255,255,255,0.1);
-            color: #fff;
+            background: #F1F5F9;
+            color: #1A202C;
         }
 
         .nav-item.active {
-            background: rgba(255,255,255,0.15);
-            color: #fff;
+            background: rgba(0, 51, 112, 0.08);
+            color: #003370;
+            font-weight: 500;
         }
 
         .nav-item i {
-            font-size: 20px;
+            font-size: 18px;
         }
 
-        /* 顶部栏 */
+        .nav-divider {
+            height: 1px;
+            background: #E2E8F0;
+            margin: 12px 0;
+        }
+
+        /* ========== 主内容区 ========== */
+        .main-content {
+            flex: 1;
+            margin-left: 260px;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* 顶部导航栏 */
         .topbar {
-            background: #fff;
-            padding: 16px 32px;
-            border-bottom: 1px solid #e5e7eb;
+            height: 64px;
+            background: #FFFFFF;
+            border-bottom: 1px solid #E2E8F0;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            padding: 0 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
         }
 
         .topbar-title {
             font-size: 18px;
-            font-weight: 600;
-            color: #1a1a1a;
+            font-weight: 500;
+            color: #1A202C;
         }
 
-        .user-avatar {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .topbar-right {
             display: flex;
             align-items: center;
-            justify-content: center;
-            color: #fff;
-            font-weight: 600;
+            gap: 12px;
         }
 
-        /* 内容区 */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .btn i {
+            font-size: 16px;
+        }
+
+        .btn-outline {
+            background: #FFFFFF;
+            border: 1px solid #CBD5E1;
+            color: #4A5568;
+        }
+
+        .btn-outline:hover {
+            border-color: #335599;
+            color: #335599;
+        }
+
+        .btn-outline-blue {
+            background: #FFFFFF;
+            border: 1px solid #335599;
+            color: #335599;
+        }
+
+        .btn-outline-blue:hover {
+            background: rgba(51, 85, 153, 0.05);
+        }
+
+        .btn-primary {
+            background: #003370;
+            color: #FFFFFF;
+            border: 1px solid #003370;
+        }
+
+        .btn-primary:hover {
+            background: #002855;
+            border-color: #002855;
+        }
+
+        .btn-icon {
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            border-radius: 8px;
+        }
+
+        /* 内容区域 */
         .content-area {
             flex: 1;
-            padding: 24px 32px;
-            max-width: 1400px;
+            padding: 24px;
         }
 
-        /* 卡片通用样式 */
+        /* ========== 卡片样式 ========== */
         .card {
-            background: #fff;
-            border-radius: 16px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            border: 1px solid #e5e7eb;
+            background: #FFFFFF;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
             overflow: hidden;
         }
 
         .card-header {
             padding: 16px 20px;
-            border-bottom: 1px solid #f0f0f0;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            border-bottom: 1px solid #F1F5F9;
         }
 
         .card-title {
             display: flex;
             align-items: center;
             gap: 10px;
+            font-size: 16px;
             font-weight: 600;
-            color: #1a1a1a;
+            color: #1A202C;
         }
 
         .card-title i {
-            font-size: 20px;
-            color: #3b82f6;
+            font-size: 18px;
+            color: #335599;
         }
 
         .card-body {
             padding: 20px;
         }
 
-        /* 快捷指令 */
+        /* ========== 页面标题区 ========== */
+        .page-header {
+            margin-bottom: 24px;
+        }
+
+        .page-title {
+            font-size: 28px;
+            font-weight: 600;
+            color: #1A202C;
+            margin-bottom: 8px;
+        }
+
+        .page-subtitle {
+            font-size: 13px;
+            color: #4A5568;
+        }
+
+        /* ========== 快捷入口 ========== */
         .quick-actions {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -168,36 +312,46 @@
         }
 
         .quick-btn {
-            padding: 14px 16px;
-            background: #f8fafc;
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
+            padding: 14px 16px;
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 6px;
             cursor: pointer;
             transition: all 0.2s;
         }
 
         .quick-btn:hover {
-            border-color: #3b82f6;
-            background: #eff6ff;
+            border-color: #003370;
+            background: rgba(0, 51, 112, 0.02);
+        }
+
+        .quick-btn.active {
+            border-color: #003370;
+            border-width: 2px;
+            background: rgba(0, 51, 112, 0.04);
         }
 
         .quick-btn i {
-            font-size: 18px;
-            color: #3b82f6;
+            font-size: 20px;
+            color: #335599;
         }
 
         .quick-btn span {
-            font-size: 14px;
-            color: #374151;
+            font-size: 15px;
+            color: #4A5568;
             font-weight: 500;
         }
 
-        /* 输入区域 */
-        .input-area {
-            margin-top: 20px;
+        .quick-btn.active span {
+            color: #003370;
+        }
+
+        /* ========== 输入区域 ========== */
+        .input-section {
+            margin-top: 24px;
         }
 
         .input-wrapper {
@@ -208,35 +362,40 @@
 
         .input-box {
             flex: 1;
-            position: relative;
         }
 
         .input-box textarea {
             width: 100%;
-            padding: 16px 20px;
-            border: 1px solid #e5e7eb;
-            border-radius: 14px;
+            padding: 14px 16px;
+            border: 1px solid #CBD5E1;
+            border-radius: 4px;
             font-size: 15px;
+            font-family: inherit;
+            color: #1A202C;
             resize: none;
             outline: none;
             transition: all 0.2s;
-            font-family: inherit;
-            min-height: 54px;
+            min-height: 48px;
             max-height: 120px;
+            background: #FFFFFF;
+        }
+
+        .input-box textarea::placeholder {
+            color: #94A3B8;
         }
 
         .input-box textarea:focus {
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+            border-color: #003370;
+            box-shadow: 0 0 0 3px rgba(0, 51, 112, 0.08);
         }
 
         .send-btn {
-            width: 54px;
-            height: 54px;
-            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            width: 48px;
+            height: 48px;
+            background: #003370;
             border: none;
-            border-radius: 14px;
-            color: #fff;
+            border-radius: 6px;
+            color: #FFFFFF;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -245,38 +404,38 @@
         }
 
         .send-btn:hover {
-            transform: scale(1.02);
-            box-shadow: 0 4px 12px rgba(59,130,246,0.3);
+            background: #002855;
         }
 
         .send-btn:disabled {
-            background: #ccc;
+            background: #CBD5E1;
             cursor: not-allowed;
-            transform: none;
         }
 
         .send-btn i {
-            font-size: 22px;
+            font-size: 20px;
         }
 
-        /* 思考过程 */
-        .thinking-area {
+        /* ========== 思考过程区域 ========== */
+        .thinking-section {
             margin-top: 24px;
         }
 
         .thinking-card {
-            border-left: 3px solid #8b5cf6;
+            border-left: 3px solid #335599;
         }
 
         .thinking-header {
             display: flex;
             align-items: center;
-            gap: 8px;
-            color: #8b5cf6;
+            gap: 10px;
+            font-size: 15px;
             font-weight: 600;
+            color: #335599;
         }
 
         .thinking-header i {
+            font-size: 18px;
             animation: pulse 2s infinite;
         }
 
@@ -285,21 +444,128 @@
             50% { opacity: 0.5; }
         }
 
-        .thinking-content {
-            padding: 16px 20px;
-            color: #4b5563;
-            line-height: 1.8;
-            font-size: 14px;
-            max-height: 400px;
+        .thinking-body {
+            max-height: 450px;
             overflow-y: auto;
+        }
+
+        /* 进度指示器 */
+        .progress-track {
+            display: flex;
+            align-items: center;
+            padding: 16px 20px;
+            background: #F8FAFC;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #94A3B8;
+            white-space: nowrap;
+        }
+
+        .progress-step.active {
+            color: #003370;
+            font-weight: 500;
+        }
+
+        .progress-step.done {
+            color: #059669;
+        }
+
+        .progress-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #CBD5E1;
+        }
+
+        .progress-step.active .progress-dot {
+            background: #003370;
+            animation: pulse-dot 1.5s infinite;
+        }
+
+        .progress-step.done .progress-dot {
+            background: #059669;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.25); }
+        }
+
+        .progress-line {
+            flex: 1;
+            height: 2px;
+            background: #E2E8F0;
+            margin: 0 8px;
+            min-width: 20px;
+        }
+
+        /* 思考阶段列表 */
+        .thinking-stages {
+            padding: 0 20px 20px;
+        }
+
+        .thinking-stage {
+            padding: 16px 0;
+            border-bottom: 1px dashed #E2E8F0;
+        }
+
+        .thinking-stage:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+
+        .stage-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .stage-badge {
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #F1F5F9;
+            color: #94A3B8;
+        }
+
+        .stage-badge.running {
+            background: rgba(51, 85, 153, 0.1);
+            color: #335599;
+        }
+
+        .stage-badge.done {
+            background: #D1FAE5;
+            color: #059669;
+        }
+
+        .stage-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1A202C;
+        }
+
+        .stage-content {
+            font-size: 14px;
+            color: #4A5568;
+            line-height: 1.7;
+            padding-left: 28px;
         }
 
         /* 打字机光标 */
         .typing-cursor {
             display: inline-block;
             width: 2px;
-            height: 16px;
-            background: #3b82f6;
+            height: 14px;
+            background: #003370;
             margin-left: 2px;
             animation: blink 0.8s infinite;
             vertical-align: middle;
@@ -310,9 +576,91 @@
             50% { opacity: 0; }
         }
 
-        /* 搜索建议 */
-        .suggestions-area {
-            margin-top: 20px;
+        /* ========== 结果区域 ========== */
+        .result-section {
+            margin-top: 24px;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 20px;
+        }
+
+        /* 核心观点 */
+        .core-insights .card-header {
+            background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+            border-bottom: none;
+        }
+
+        .insight-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 14px 0;
+            border-bottom: 1px solid #F1F5F9;
+        }
+
+        .insight-item:last-child {
+            border-bottom: none;
+        }
+
+        .insight-icon {
+            width: 32px;
+            height: 32px;
+            background: #FFFFFF;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+        }
+
+        .insight-icon i {
+            font-size: 16px;
+            color: #B45309;
+        }
+
+        .insight-text {
+            flex: 1;
+            font-size: 14px;
+            color: #92400E;
+            line-height: 1.6;
+        }
+
+        /* 详细分析 */
+        .analysis-body {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .analysis-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1A202C;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .analysis-title i {
+            color: #335599;
+        }
+
+        .analysis-text {
+            font-size: 14px;
+            color: #4A5568;
+            line-height: 1.8;
+        }
+
+        .analysis-text p {
+            margin-bottom: 12px;
+        }
+
+        /* ========== 搜索建议 ========== */
+        .suggestions-section {
+            margin-top: 24px;
         }
 
         .suggestion-tags {
@@ -323,330 +671,185 @@
 
         .suggestion-tag {
             padding: 8px 16px;
-            background: #f0f9ff;
-            border: 1px solid #bae6fd;
-            border-radius: 20px;
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 6px;
             font-size: 13px;
-            color: #0369a1;
+            color: #4A5568;
             cursor: pointer;
             transition: all 0.2s;
         }
 
         .suggestion-tag:hover {
-            background: #e0f2fe;
-            border-color: #7dd3fc;
+            border-color: #003370;
+            color: #003370;
+            background: rgba(0, 51, 112, 0.02);
         }
 
-        /* 相关问题 */
-        .questions-area {
-            margin-top: 20px;
+        /* ========== 相关问题 ========== */
+        .questions-section {
+            margin-top: 24px;
         }
 
         .question-list {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
         }
 
         .question-item {
-            padding: 14px 18px;
-            background: #fafafa;
-            border-radius: 10px;
             display: flex;
             align-items: center;
             gap: 12px;
+            padding: 12px 16px;
+            background: #F8FAFC;
+            border-radius: 6px;
             cursor: pointer;
             transition: all 0.2s;
         }
 
         .question-item:hover {
-            background: #f0f0f0;
+            background: #F1F5F9;
         }
 
         .question-item i {
             font-size: 16px;
-            color: #6b7280;
+            color: #94A3B8;
         }
 
         .question-item span {
             font-size: 14px;
-            color: #374151;
+            color: #4A5568;
         }
 
-        /* 分析结果区 */
-        .result-area {
-            margin-top: 24px;
-        }
-
-        .result-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-
-        .core-insights .card-body {
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-        }
-
-        .insight-item {
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-            padding: 12px 0;
-            border-bottom: 1px solid rgba(0,0,0,0.06);
-        }
-
-        .insight-item:last-child {
-            border-bottom: none;
-        }
-
-        .insight-icon {
-            width: 28px;
-            height: 28px;
-            border-radius: 8px;
-            background: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-
-        .insight-icon i {
-            font-size: 14px;
-            color: #d97706;
-        }
-
-        .insight-text {
-            font-size: 14px;
-            color: #92400e;
-            line-height: 1.6;
-        }
-
-        /* 详细分析 */
-        .detail-analysis .card-body {
-            max-height: 500px;
-            overflow-y: auto;
-        }
-
-        .analysis-section {
-            margin-bottom: 20px;
-        }
-
-        .section-title {
-            font-size: 15px;
-            font-weight: 600;
-            color: #1f2937;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .section-title i {
-            color: #3b82f6;
-        }
-
-        .section-content {
-            font-size: 14px;
-            color: #4b5563;
-            line-height: 1.8;
-        }
-
-        /* 进度指示 */
-        .progress-indicator {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            padding: 12px 20px;
-            background: #f8fafc;
-            border-radius: 10px;
-            margin-bottom: 16px;
-        }
-
-        .progress-step {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 13px;
-            color: #6b7280;
-        }
-
-        .progress-step.active {
-            color: #3b82f6;
-            font-weight: 500;
-        }
-
-        .progress-step.done {
-            color: #10b981;
-        }
-
-        .progress-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #d1d5db;
-        }
-
-        .progress-step.active .progress-dot {
-            background: #3b82f6;
-            animation: pulse-dot 1.5s infinite;
-        }
-
-        .progress-step.done .progress-dot {
-            background: #10b981;
-        }
-
-        @keyframes pulse-dot {
-            0%, 100% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.3); opacity: 0.7; }
-        }
-
-        .progress-line {
-            flex: 1;
-            height: 2px;
-            background: #e5e7eb;
-            position: relative;
-        }
-
-        .progress-line-fill {
-            position: absolute;
-            left: 0;
-            top: 0;
-            height: 100%;
-            background: #3b82f6;
-            transition: width 0.3s;
-        }
-
-        /* 思考过程列表 */
-        .thinking-stages {
-            padding: 0;
-        }
-
-        .thinking-stage {
-            margin-bottom: 16px;
-            padding-bottom: 16px;
-            border-bottom: 1px dashed #e5e7eb;
-        }
-
-        .thinking-stage:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-            padding-bottom: 0;
-        }
-
-        .stage-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 8px;
-        }
-
-        .stage-badge {
-            padding: 4px 10px;
-            background: #ede9fe;
-            color: #7c3aed;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .stage-badge.done {
-            background: #d1fae5;
-            color: #059669;
-        }
-
-        .stage-name {
-            font-weight: 600;
-            color: #1f2937;
-            font-size: 14px;
-        }
-
-        .stage-content {
-            color: #4b5563;
-            font-size: 14px;
-            line-height: 1.7;
-            padding-left: 36px;
-        }
-
-        /* 隐藏元素 */
+        /* ========== 隐藏元素 ========== */
         .hidden {
             display: none !important;
         }
 
+        /* ========== 动画 ========== */
         @keyframes spin {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
         }
+
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
     </style>
 </head>
 <body>
-    <div class="flex">
-        <!-- 左侧导航 -->
+    <div class="page-container">
+        <!-- 左侧侧边栏 -->
         <aside class="sidebar">
-            <div class="sidebar-logo">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
-                        <i class="ph ph-car text-white text-xl"></i>
+            <div class="sidebar-header">
+                <div class="logo-section">
+                    <div class="logo-icon">
+                        <i class="ph ph-car"></i>
                     </div>
                     <div>
-                        <div class="text-white font-semibold">智能分析</div>
-                        <div class="text-white/50 text-xs">市场战略决策平台</div>
+                        <div class="logo-text">智能分析</div>
+                        <div class="logo-sub">市场战略决策平台</div>
                     </div>
                 </div>
             </div>
 
             <nav class="sidebar-nav">
-                <div class="nav-item active">
-                    <i class="ph ph-chart-line-up"></i>
-                    <span>市场分析</span>
+                <div class="nav-section">
+                    <div class="nav-section-title">
+                        <i class="ph ph-squares-four"></i>
+                        功能菜单
+                    </div>
+
+                    <div class="nav-item active">
+                        <i class="ph ph-chart-line-up"></i>
+                        <span>市场分析</span>
+                    </div>
+                    <div class="nav-item">
+                        <i class="ph ph-users-three"></i>
+                        <span>竞品分析</span>
+                    </div>
+                    <div class="nav-item">
+                        <i class="ph ph-newspaper"></i>
+                        <span>政策解读</span>
+                    </div>
+                    <div class="nav-item">
+                        <i class="ph ph-lightbulb"></i>
+                        <span>行业洞察</span>
+                    </div>
                 </div>
-                <div class="nav-item">
-                    <i class="ph ph-users-three"></i>
-                    <span>竞品分析</span>
+
+                <div class="nav-divider"></div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">
+                        <i class="ph ph-folder"></i>
+                        数据中心
+                    </div>
+
+                    <div class="nav-item">
+                        <i class="ph ph-file-text"></i>
+                        <span>报告中心</span>
+                    </div>
+                    <div class="nav-item">
+                        <i class="ph ph-database"></i>
+                        <span>数据查询</span>
+                    </div>
                 </div>
-                <div class="nav-item">
-                    <i class="ph ph-newspaper"></i>
-                    <span>政策解读</span>
-                </div>
-                <div class="nav-item">
-                    <i class="ph ph-lightbulb"></i>
-                    <span>行业洞察</span>
-                </div>
-                <div class="nav-item">
-                    <i class="ph ph-file-text"></i>
-                    <span>报告中心</span>
+
+                <div class="nav-divider"></div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">
+                        <i class="ph ph-gear"></i>
+                        系统设置
+                    </div>
+
+                    <div class="nav-item">
+                        <i class="ph ph-user"></i>
+                        <span>个人中心</span>
+                    </div>
                 </div>
             </nav>
-
-            <div class="p-4 border-t border-white/10">
-                <div class="nav-item">
-                    <i class="ph ph-gear"></i>
-                    <span>系统设置</span>
-                </div>
-            </div>
         </aside>
 
         <!-- 主内容区 -->
         <main class="main-content">
-            <!-- 顶部栏 -->
+            <!-- 顶部导航栏 -->
             <header class="topbar">
-                <h1 class="topbar-title">汽车市场智能分析平台</h1>
-                <div class="flex items-center gap-4">
-                    <button class="p-2 hover:bg-gray-100 rounded-lg">
-                        <i class="ph ph-bell text-xl text-gray-500"></i>
+                <div class="topbar-left">
+                    <h1 class="topbar-title">周度汽车市场趋势洞察 AI</h1>
+                </div>
+                <div class="topbar-right">
+                    <button class="btn btn-outline">
+                        <i class="ph ph-clock-counter-clockwise"></i>
+                        <span>历史记录</span>
                     </button>
-                    <div class="user-avatar">AI</div>
+                    <button class="btn btn-outline-blue">
+                        <i class="ph ph-phone"></i>
+                        <span>联系我们</span>
+                    </button>
+                    <button class="btn btn-primary">
+                        <i class="ph ph-plus"></i>
+                        <span>新建对话</span>
+                    </button>
                 </div>
             </header>
 
             <!-- 内容区域 -->
             <div class="content-area">
-                <!-- 快捷指令 -->
+                <!-- 页面标题 -->
+                <div class="page-header">
+                    <h2 class="page-title">市场战略智能分析</h2>
+                    <p class="page-subtitle">您可以询问本品画像、竞品对比、市场趋势、政策影响等各类市场分析问题</p>
+                </div>
+
+                <!-- 快捷入口卡片 -->
                 <div class="card">
                     <div class="card-header">
                         <div class="card-title">
                             <i class="ph ph-lightning"></i>
-                            <span>快捷指令</span>
+                            <span>常用查询</span>
                         </div>
                     </div>
                     <div class="card-body">
@@ -663,7 +866,7 @@
                                 <i class="ph ph-scroll"></i>
                                 <span>政策解读</span>
                             </div>
-                            <div class="quick-btn" onclick="setQuestion('分析2024年SUV市场发展趋势与机会')">
+                            <div class="quick-btn active" onclick="setQuestion('分析2024年SUV市场发展趋势与机会')">
                                 <i class="ph ph-trend-up"></i>
                                 <span>行业洞察</span>
                             </div>
@@ -672,19 +875,23 @@
                 </div>
 
                 <!-- 输入区域 -->
-                <div class="input-area">
-                    <div class="input-wrapper">
-                        <div class="input-box">
-                            <textarea id="questionInput" placeholder="输入您想了解的市场分析问题，如：分析比亚迪在20-30万纯电SUV市场的竞争态势" rows="1"></textarea>
+                <div class="input-section">
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="input-wrapper">
+                                <div class="input-box">
+                                    <textarea id="questionInput" placeholder="请输入您的市场分析问题，例如：分析比亚迪在20-30万纯电SUV市场的竞争态势" rows="1"></textarea>
+                                </div>
+                                <button class="send-btn" id="sendBtn" onclick="startAnalysis()">
+                                    <i class="ph ph-paper-plane-tilt"></i>
+                                </button>
+                            </div>
                         </div>
-                        <button class="send-btn" id="sendBtn" onclick="startAnalysis()">
-                            <i class="ph ph-paper-plane-tilt"></i>
-                        </button>
                     </div>
                 </div>
 
                 <!-- 思考过程区域 -->
-                <div id="thinkingArea" class="thinking-area hidden">
+                <div id="thinkingSection" class="thinking-section hidden">
                     <div class="card thinking-card">
                         <div class="card-header">
                             <div class="thinking-header">
@@ -692,14 +899,48 @@
                                 <span>深度思考中...</span>
                             </div>
                         </div>
-                        <div class="thinking-content" id="thinkingContent">
-                            <!-- 思考过程动态显示 -->
+                        <div class="thinking-body" id="thinkingBody">
+                            <!-- 动态内容 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 分析结果区域 -->
+                <div id="resultSection" class="result-section hidden">
+                    <div class="result-grid">
+                        <!-- 核心观点 -->
+                        <div class="card core-insights">
+                            <div class="card-header">
+                                <div class="card-title" style="color: #92400E;">
+                                    <i class="ph ph-star" style="color: #B45309;"></i>
+                                    <span>核心观点</span>
+                                </div>
+                            </div>
+                            <div class="card-body" id="insightsBody">
+                                <!-- 动态生成 -->
+                            </div>
+                        </div>
+
+                        <!-- 详细分析 -->
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="ph ph-article"></i>
+                                    <span>详细分析报告</span>
+                                </div>
+                                <button class="btn btn-icon btn-outline">
+                                    <i class="ph ph-export"></i>
+                                </button>
+                            </div>
+                            <div class="card-body analysis-body" id="analysisBody">
+                                <!-- 动态生成 -->
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- 搜索建议 -->
-                <div id="suggestionsArea" class="suggestions-area hidden">
+                <div id="suggestionsSection" class="suggestions-section hidden">
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">
@@ -716,52 +957,16 @@
                 </div>
 
                 <!-- 相关问题 -->
-                <div id="questionsArea" class="questions-area hidden">
+                <div id="questionsSection" class="questions-section hidden">
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">
                                 <i class="ph ph-chat-circle-dots"></i>
-                                <span>相关问题</span>
+                                <span>相关问题推荐</span>
                             </div>
                         </div>
                         <div class="card-body">
                             <div class="question-list" id="questionList">
-                                <!-- 动态生成 -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 分析结果区域 -->
-                <div id="resultArea" class="result-area hidden">
-                    <div class="result-grid">
-                        <!-- 核心观点 -->
-                        <div class="card core-insights">
-                            <div class="card-header" style="background: #fef3c7;">
-                                <div class="card-title" style="color: #92400e;">
-                                    <i class="ph ph-star" style="color: #d97706;"></i>
-                                    <span>核心观点</span>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div id="insightsList">
-                                    <!-- 动态生成 -->
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 详细分析 -->
-                        <div class="card detail-analysis">
-                            <div class="card-header">
-                                <div class="card-title">
-                                    <i class="ph ph-article"></i>
-                                    <span>详细分析</span>
-                                </div>
-                                <button class="p-2 hover:bg-gray-100 rounded-lg">
-                                    <i class="ph ph-export text-gray-500"></i>
-                                </button>
-                            </div>
-                            <div class="card-body" id="analysisContent">
                                 <!-- 动态生成 -->
                             </div>
                         </div>
@@ -776,11 +981,11 @@
         let isAnalyzing = false;
 
         const steps = [
-            { id: 'stage1', name: '意图识别', icon: 'ph-target' },
-            { id: 'stage2', name: '数据检索', icon: 'ph-database' },
-            { id: 'stage3', name: '战略分析', icon: 'ph-chart-line-up' },
-            { id: 'stage4', name: '品牌分析', icon: 'ph-buildings' },
-            { id: 'stage5', name: '报告生成', icon: 'ph-file-text' }
+            { id: 'stage1', name: '意图识别' },
+            { id: 'stage2', name: '数据检索' },
+            { id: 'stage3', name: '战略分析' },
+            { id: 'stage4', name: '品牌分析' },
+            { id: 'stage5', name: '报告生成' }
         ];
 
         // 自动调整textarea高度
@@ -819,16 +1024,16 @@
             isAnalyzing = true;
             const sendBtn = document.getElementById('sendBtn');
             sendBtn.disabled = true;
-            sendBtn.innerHTML = '<i class="ph ph-spinner" style="animation: spin 1s linear infinite;"></i>';
+            sendBtn.innerHTML = '<i class="ph ph-spinner animate-spin"></i>';
 
             // 显示思考区域
-            showThinkingArea();
+            showThinkingSection();
             initThinkingContent();
 
             // 隐藏结果区域
-            document.getElementById('resultArea').classList.add('hidden');
-            document.getElementById('suggestionsArea').classList.add('hidden');
-            document.getElementById('questionsArea').classList.add('hidden');
+            document.getElementById('resultSection').classList.add('hidden');
+            document.getElementById('suggestionsSection').classList.add('hidden');
+            document.getElementById('questionsSection').classList.add('hidden');
 
             try {
                 const response = await fetch(`${API_BASE}/analyze_sse`, {
@@ -877,16 +1082,18 @@
                 }
 
                 // 分析完成
-                document.querySelector('.thinking-header').innerHTML = `
-                    <i class="ph ph-check-circle" style="color: #10b981;"></i>
-                    <span style="color: #10b981;">思考完成</span>
+                const header = document.querySelector('.thinking-header');
+                header.innerHTML = `
+                    <i class="ph ph-check-circle" style="color: #059669;"></i>
+                    <span style="color: #059669;">思考完成</span>
                 `;
 
             } catch (error) {
                 console.error('SSE Error:', error);
-                document.querySelector('.thinking-header').innerHTML = `
-                    <i class="ph ph-x-circle" style="color: #ef4444;"></i>
-                    <span style="color: #ef4444;">分析失败: ${error.message}</span>
+                const header = document.querySelector('.thinking-header');
+                header.innerHTML = `
+                    <i class="ph ph-x-circle" style="color: #DC2626;"></i>
+                    <span style="color: #DC2626;">分析失败: ${error.message}</span>
                 `;
             } finally {
                 isAnalyzing = false;
@@ -896,26 +1103,30 @@
         }
 
         // 显示思考区域
-        function showThinkingArea() {
-            const thinkingArea = document.getElementById('thinkingArea');
-            thinkingArea.classList.remove('hidden');
+        function showThinkingSection() {
+            document.getElementById('thinkingSection').classList.remove('hidden');
         }
 
         // 初始化思考内容
         function initThinkingContent() {
-            const content = document.getElementById('thinkingContent');
+            const body = document.getElementById('thinkingBody');
 
-            // 添加进度指示器
+            // 进度指示器
             const progressHtml = `
-                <div class="progress-indicator">
+                <div class="progress-track">
                     ${steps.map((step, i) => `
                         <div class="progress-step" id="progress-${step.id}">
                             <div class="progress-dot"></div>
                             <span>${step.name}</span>
                         </div>
-                    `).join('<div class="progress-line"><div class="progress-line-fill" id="progressFill" style="width: 0%"></div></div>')}
+                        ${i < steps.length - 1 ? '<div class="progress-line"><div class="progress-line-fill" id="progressFill-${step.id}" style="width: 0%"></div></div>' : ''}
+                    `).join('')}
                 </div>
-                <div class="thinking-stages" id="thinkingStages">
+            `;
+
+            // 阶段列表
+            const stagesHtml = `
+                <div class="thinking-stages">
                     ${steps.map(step => `
                         <div class="thinking-stage" id="stage-${step.id}">
                             <div class="stage-header">
@@ -929,14 +1140,14 @@
                     `).join('')}
                 </div>
             `;
-            content.innerHTML = progressHtml;
+
+            body.innerHTML = progressHtml + stagesHtml;
         }
 
         // 更新进度
         function updateProgress(stageId, status) {
             const stepIndex = steps.findIndex(s => s.id === stageId);
 
-            // 更新进度指示器
             steps.forEach((step, i) => {
                 const el = document.getElementById(`progress-${step.id}`);
                 if (!el) return;
@@ -949,19 +1160,21 @@
                 }
             });
 
-            // 更新进度条
-            const progressFill = document.getElementById('progressFill');
-            if (progressFill) {
-                const progress = ((stepIndex + 1) / steps.length) * 100;
-                progressFill.style.width = progress + '%';
+            // 更新进度线
+            if (stepIndex > 0) {
+                const prevFill = document.getElementById(`progressFill-${steps[stepIndex - 1].id}`);
+                if (prevFill) {
+                    prevFill.style.width = '100%';
+                }
             }
 
-            // 更新阶段状态
+            // 更新阶段徽章
             const badge = document.getElementById(`badge-${stageId}`);
             if (badge) {
+                badge.classList.remove('running', 'done');
                 if (status === 'running') {
                     badge.textContent = '分析中';
-                    badge.classList.remove('done');
+                    badge.classList.add('running');
                 } else if (status === 'done') {
                     badge.textContent = '完成';
                     badge.classList.add('done');
@@ -984,9 +1197,8 @@
                     element.innerHTML = formatThinkingText(displayText) + '<span class="typing-cursor"></span>';
                     index += chunkSize;
 
-                    // 滚动到底部
-                    const content = document.getElementById('thinkingContent');
-                    content.scrollTop = content.scrollHeight;
+                    const body = document.getElementById('thinkingBody');
+                    body.scrollTop = body.scrollHeight;
                 } else {
                     element.innerHTML = formatThinkingText(text);
                     clearInterval(interval);
@@ -1000,14 +1212,14 @@
             return text
                 .replace(/\n/g, '<br>')
                 .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                .replace(/类型：/g, '<span style="color: #3b82f6;">类型：</span>')
-                .replace(/置信度：/g, '<span style="color: #8b5cf6;">置信度：</span>')
-                .replace(/向量检索：/g, '<span style="color: #10b981;">向量检索：</span>')
-                .replace(/SQL查询：/g, '<span style="color: #10b981;">SQL查询：</span>')
-                .replace(/PEST：/g, '<span style="color: #f59e0b;">PEST：</span>')
-                .replace(/波特五力：/g, '<span style="color: #f59e0b;">波特五力：</span>')
-                .replace(/SWOT：/g, '<span style="color: #f59e0b;">SWOT：</span>')
-                .replace(/4P：/g, '<span style="color: #f59e0b;">4P：</span>');
+                .replace(/类型：/g, '<span style="color: #003370;">类型：</span>')
+                .replace(/置信度：/g, '<span style="color: #335599;">置信度：</span>')
+                .replace(/向量检索：/g, '<span style="color: #059669;">向量检索：</span>')
+                .replace(/SQL查询：/g, '<span style="color: #059669;">SQL查询：</span>')
+                .replace(/PEST：/g, '<span style="color: #D97706;">PEST：</span>')
+                .replace(/波特五力：/g, '<span style="color: #D97706;">波特五力：</span>')
+                .replace(/SWOT：/g, '<span style="color: #D97706;">SWOT：</span>')
+                .replace(/4P：/g, '<span style="color: #D97706;">4P：</span>');
         }
 
         // 处理SSE消息
@@ -1046,13 +1258,12 @@
 
         // 显示结果
         function showResults(data) {
-            const resultArea = document.getElementById('resultArea');
-            resultArea.classList.remove('hidden');
+            document.getElementById('resultSection').classList.remove('hidden');
 
-            // 生成核心观点
-            const insightsList = document.getElementById('insightsList');
+            // 核心观点
+            const insightsBody = document.getElementById('insightsBody');
             const insights = generateInsights(data);
-            insightsList.innerHTML = insights.map(insight => `
+            insightsBody.innerHTML = insights.map(insight => `
                 <div class="insight-item">
                     <div class="insight-icon">
                         <i class="${insight.icon}"></i>
@@ -1061,22 +1272,20 @@
                 </div>
             `).join('');
 
-            // 生成详细分析
-            const analysisContent = document.getElementById('analysisContent');
-            analysisContent.innerHTML = generateAnalysisContent(data.report);
+            // 详细分析
+            const analysisBody = document.getElementById('analysisBody');
+            analysisBody.innerHTML = generateAnalysisContent(data.report);
 
-            // 生成搜索建议
-            const suggestionsArea = document.getElementById('suggestionsArea');
-            suggestionsArea.classList.remove('hidden');
+            // 搜索建议
+            document.getElementById('suggestionsSection').classList.remove('hidden');
             const suggestionTags = document.getElementById('suggestionTags');
             const suggestions = generateSuggestions(data);
             suggestionTags.innerHTML = suggestions.map(s => `
                 <div class="suggestion-tag" onclick="setQuestion('${s}')">${s}</div>
             `).join('');
 
-            // 生成相关问题
-            const questionsArea = document.getElementById('questionsArea');
-            questionsArea.classList.remove('hidden');
+            // 相关问题
+            document.getElementById('questionsSection').classList.remove('hidden');
             const questionList = document.getElementById('questionList');
             const questions = generateQuestions(data);
             questionList.innerHTML = questions.map(q => `
@@ -1087,7 +1296,7 @@
             `).join('');
 
             // 滚动到结果
-            resultArea.scrollIntoView({ behavior: 'smooth' });
+            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
         }
 
         // 生成核心观点
@@ -1117,69 +1326,48 @@
 
         // 生成分析内容
         function generateAnalysisContent(markdown) {
-            if (!markdown) return '<p>暂无分析内容</p>';
+            if (!markdown) return '<p class="analysis-text">暂无分析内容</p>';
 
-            // 简单的Markdown解析
             let html = markdown
                 .replace(/&/g, '&amp;')
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
-                .replace(/^### (.+)$/gm, '<div class="section-title"><i class="ph ph-dot-outline"></i>$1</div>')
-                .replace(/^## (.+)$/gm, '<div class="section-title" style="font-size:16px;"><i class="ph ph-minus"></i>$1</div>')
+                .replace(/^### (.+)$/gm, '<div class="analysis-title"><i class="ph ph-dot-outline"></i>$1</div>')
+                .replace(/^## (.+)$/gm, '<div class="analysis-title" style="font-size:16px;"><i class="ph ph-minus"></i>$1</div>')
                 .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                .replace(/^- (.+)$/gm, '<div style="margin-left:16px;margin-bottom:6px;">• $1</div>')
-                .replace(/^(\d+)\. (.+)$/gm, '<div style="margin-left:16px;margin-bottom:6px;">$1. $2</div>')
-                .replace(/\n\n/g, '</p><p>')
+                .replace(/^- (.+)$/gm, '<p style="margin-left:16px;margin-bottom:8px;">• $1</p>')
+                .replace(/^(\d+)\. (.+)$/gm, '<p style="margin-left:16px;margin-bottom:8px;">$1. $2</p>')
+                .replace(/\n\n/g, '</p><p class="analysis-text">')
                 .replace(/\n/g, '<br>');
 
-            return `<p>${html}</p>`;
+            return `<p class="analysis-text">${html}</p>`;
         }
 
         // 生成搜索建议
         function generateSuggestions(data) {
             const intentType = data.intent_type || '';
-            const suggestions = [];
 
             if (intentType.includes('竞品') || intentType.includes('竞争')) {
-                suggestions.push('查看竞品价格趋势');
-                suggestions.push('对比市场份额变化');
-                suggestions.push('分析用户评价差异');
+                return ['查看竞品价格趋势', '对比市场份额变化', '分析用户评价差异'];
             } else if (intentType.includes('市场') || intentType.includes('趋势')) {
-                suggestions.push('查看细分市场数据');
-                suggestions.push('分析消费者偏好');
-                suggestions.push('预测未来增长');
-            } else {
-                suggestions.push('查看更多品牌分析');
-                suggestions.push('获取最新市场报告');
-                suggestions.push('对比历史数据');
+                return ['查看细分市场数据', '分析消费者偏好', '预测未来增长'];
             }
-
-            return suggestions;
+            return ['查看更多品牌分析', '获取最新市场报告', '对比历史数据'];
         }
 
         // 生成相关问题
         function generateQuestions(data) {
             const intentType = data.intent_type || '';
-            const questions = [];
 
             if (intentType.includes('竞品') || intentType.includes('竞争')) {
-                questions.push('该市场的增长潜力如何？');
-                questions.push('主要竞争对手的优势是什么？');
-                questions.push('价格战对市场格局的影响？');
+                return ['该市场的增长潜力如何？', '主要竞争对手的优势是什么？', '价格战对市场格局的影响？'];
             } else if (intentType.includes('市场') || intentType.includes('趋势')) {
-                questions.push('政策对市场的影响有多大？');
-                questions.push('哪些细分市场值得关注？');
-                questions.push('消费者购车偏好有哪些变化？');
-            } else {
-                questions.push('该品牌的销量表现如何？');
-                questions.push('竞品有哪些差异化策略？');
-                questions.push('市场机会和风险是什么？');
+                return ['政策对市场的影响有多大？', '哪些细分市场值得关注？', '消费者购车偏好有哪些变化？'];
             }
-
-            return questions;
+            return ['该品牌的销量表现如何？', '竞品有哪些差异化策略？', '市场机会和风险是什么？'];
         }
 
-        // 页面加载完成后检查服务状态
+        // 页面加载检查服务
         window.onload = async function() {
             try {
                 const response = await fetch(`${API_BASE}/health`);
