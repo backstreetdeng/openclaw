@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>市场战略分析 - 智能助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a24;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b0;
+            --text-muted: #606070;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-yellow: #f59e0b;
+            --accent-red: #ef4444;
+            --border-color: rgba(255,255,255,0.1);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* 背景动画 */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .bg-animation::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 30%, rgba(59, 130, 246, 0.03) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 70%, rgba(139, 92, 246, 0.03) 0%, transparent 50%);
+            animation: bgFloat 20s ease-in-out infinite;
+        }
+
+        @keyframes bgFloat {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(2%, 2%) rotate(1deg); }
+            66% { transform: translate(-1%, 1%) rotate(-1deg); }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 30px;
+        }
+
+        /* Header */
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            font-size: 48px;
+            margin-bottom: 10px;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        /* 输入区域 */
+        .input-section {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border-color);
+        }
+
+        .input-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 16px 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        input[type="text"]::placeholder {
+            color: var(--text-muted);
+        }
+
+        button {
+            padding: 16px 32px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-primary.analyzing {
+            background: linear-gradient(135deg, var(--accent-yellow), var(--accent-red));
+        }
+
+        /* 状态条 */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 24px;
+            background: var(--bg-card);
+            border-radius: 12px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border-color);
+        }
+
+        .status-text {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .status-icon.idle {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .status-icon.analyzing {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--accent-yellow);
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-icon.success {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .status-icon.error {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--accent-red);
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+        }
+
+        .progress-ring {
+            width: 40px;
+            height: 40px;
+        }
+
+        .progress-ring circle {
+            fill: none;
+            stroke-width: 3;
+        }
+
+        .progress-ring .bg {
+            stroke: var(--border-color);
+        }
+
+        .progress-ring .progress {
+            stroke: var(--accent-blue);
+            stroke-linecap: round;
+            transform: rotate(-90deg);
+            transform-origin: center;
+            transition: stroke-dashoffset 0.3s;
+        }
+
+        /* 主布局 */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 24px;
+        }
+
+        /* 步骤树 */
+        .steps-panel {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid var(--border-color);
+        }
+
+        .steps-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+        }
+
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .step-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 3px;
+            height: 100%;
+            background: var(--text-muted);
+            transition: all 0.3s;
+        }
+
+        .step-item.active {
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .step-item.active::before {
+            background: var(--accent-blue);
+            box-shadow: 0 0 10px var(--accent-blue);
+        }
+
+        .step-item.active .step-icon {
+            background: var(--accent-blue);
+            color: white;
+            animation: stepPulse 1.5s infinite;
+        }
+
+        .step-item.done {
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .step-item.done::before {
+            background: var(--accent-green);
+        }
+
+        .step-item.done .step-icon {
+            background: var(--accent-green);
+            color: white;
+        }
+
+        @keyframes stepPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+        }
+
+        .step-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            background: var(--bg-secondary);
+            color: var(--text-muted);
+            transition: all 0.3s;
+            flex-shrink: 0;
+        }
+
+        .step-info {
+            flex: 1;
+        }
+
+        .step-name {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .step-status {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .step-item.active .step-status {
+            color: var(--accent-blue);
+        }
+
+        .step-item.done .step-status {
+            color: var(--accent-green);
+        }
+
+        /* 输出面板 */
+        .output-panel {
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+        }
+
+        .output-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .output-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .output-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--accent-green);
+        }
+
+        .output-content {
+            padding: 24px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .output-content::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .output-content::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .output-content::-webkit-scrollbar-thumb {
+            background: var(--text-muted);
+            border-radius: 3px;
+        }
+
+        /* 阶段卡片 */
+        .stage-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .stage-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            background: rgba(255,255,255,0.02);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .stage-card-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .stage-card-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .stage-card.running .stage-card-icon {
+            background: rgba(59, 130, 246, 0.2);
+        }
+
+        .stage-card.done .stage-card-icon {
+            background: rgba(16, 185, 129, 0.2);
+        }
+
+        .stage-card-name {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .stage-card-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .stage-card.running .stage-card-status {
+            color: var(--accent-blue);
+        }
+
+        .stage-card.done .stage-card-status {
+            color: var(--accent-green);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .stage-card.running .status-dot {
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .stage-card-body {
+            padding: 16px 20px;
+        }
+
+        .stage-card-summary {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .summary-highlight {
+            color: var(--accent-yellow);
+            font-weight: 500;
+        }
+
+        /* 报告卡片 */
+        .report-card {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(139, 92, 246, 0.05));
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 16px;
+            padding: 24px;
+            animation: fadeIn 0.6s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .report-header {
+            text-align: center;
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .report-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .report-meta {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .report-section {
+            margin-bottom: 20px;
+        }
+
+        .report-section h2 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .report-section h3 {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--accent-blue);
+            margin: 16px 0 8px;
+        }
+
+        .report-section p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.7;
+            margin-bottom: 8px;
+        }
+
+        .report-section ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .report-section li {
+            font-size: 13px;
+            color: var(--text-secondary);
+            padding: 6px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+
+        .report-section li::before {
+            content: '•';
+            position: absolute;
+            left: 0;
+            color: var(--accent-blue);
+        }
+
+        /* 占位符 */
+        .placeholder {
+            text-align: center;
+            padding: 80px 40px;
+            color: var(--text-muted);
+        }
+
+        .placeholder-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .placeholder-text {
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+
+        .placeholder-hint {
+            font-size: 13px;
+            opacity: 0.7;
+        }
+
+        /* 打字机光标 */
+        .typing-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1em;
+            background: var(--accent-blue);
+            margin-left: 2px;
+            animation: blink 0.8s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animation"></div>
+
+    <div class="container">
+        <header>
+            <div class="logo">🚗</div>
+            <h1>市场战略分析</h1>
+            <p class="subtitle">基于 AI 的汽车行业智能分析助手</p>
+        </header>
+
+        <div class="input-section">
+            <div class="input-group">
+                <input type="text" id="question" placeholder="例如：分析比亚迪在20-30万纯电SUV市场的竞品" value="分析比亚迪的市场战略">
+                <button class="btn-primary" id="analyzeBtn" onclick="startAnalysis()">开始分析</button>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-text">
+                <div class="status-icon idle" id="statusIcon">✓</div>
+                <span id="statusText">准备就绪，请输入问题开始分析</span>
+            </div>
+            <svg class="progress-ring" viewBox="0 0 40 40" id="progressRing">
+                <circle class="bg" cx="20" cy="20" r="17"/>
+                <circle class="progress" cx="20" cy="20" r="17" stroke-dasharray="107" stroke-dashoffset="107"/>
+            </svg>
+        </div>
+
+        <div class="main-layout">
+            <div class="steps-panel">
+                <div class="steps-title">分析流程</div>
+
+                <div class="step-item" id="step-stage1">
+                    <div class="step-icon">1</div>
+                    <div class="step-info">
+                        <div class="step-name">意图识别</div>
+                        <div class="step-status">等待中</div>
+                    </div>
+                </div>
+                <div class="step-item" id="step-stage2">
+                    <div class="step-icon">2</div>
+                    <div class="step-info">
+                        <div class="step-name">数据检索</div>
+                        <div class="step-status">等待中</div>
+                    </div>
+                </div>
+                <div class="step-item" id="step-stage3">
+                    <div class="step-icon">3</div>
+                    <div class="step-info">
+                        <div class="step-name">战略分析</div>
+                        <div class="step-status">等待中</div>
+                    </div>
+                </div>
+                <div class="step-item" id="step-stage4">
+                    <div class="step-icon">4</div>
+                    <div class="step-info">
+                        <div class="step-name">品牌分析</div>
+                        <div class="step-status">等待中</div>
+                    </div>
+                </div>
+                <div class="step-item" id="step-stage5">
+                    <div class="step-icon">5</div>
+                    <div class="step-info">
+                        <div class="step-name">报告生成</div>
+                        <div class="step-status">等待中</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="output-panel">
+                <div class="output-header">
+                    <div class="output-title">实时分析结果</div>
+                    <div class="output-badge" id="outputBadge" style="display:none;">已完成</div>
+                </div>
+                <div class="output-content" id="outputContent">
+                    <div class="placeholder">
+                        <div class="placeholder-icon">📊</div>
+                        <div class="placeholder-text">输入问题后，分析结果将实时显示在这里</div>
+                        <div class="placeholder-hint">支持竞品分析、市场趋势、政策解读等</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let isAnalyzing = false;
+        let stageCards = {};
+
+        const steps = {
+            'stage1': { name: '意图识别', index: 0, icon: '🎯' },
+            'stage2': { name: '数据检索', index: 1, icon: '🔍' },
+            'stage3': { name: '战略分析', index: 2, icon: '📈' },
+            'stage4': { name: '品牌分析', index: 3, icon: '🏢' },
+            'stage5': { name: '报告生成', index: 4, icon: '📝' }
+        };
+
+        function updateStatus(message, type = 'idle') {
+            const statusText = document.getElementById('statusText');
+            const statusIcon = document.getElementById('statusIcon');
+
+            statusText.textContent = message;
+            statusIcon.className = 'status-icon ' + type;
+
+            if (type === 'idle') statusIcon.textContent = '✓';
+            else if (type === 'analyzing') statusIcon.textContent = '⟳';
+            else if (type === 'success') statusIcon.textContent = '✓';
+            else if (type === 'error') statusIcon.textContent = '✗';
+        }
+
+        function updateProgress(percent) {
+            const progress = document.querySelector('.progress-ring .progress');
+            const circumference = 2 * Math.PI * 17;
+            const offset = circumference - (percent / 100) * circumference;
+            progress.style.strokeDashoffset = offset;
+        }
+
+        function updateStep(stepId, status) {
+            const stepEl = document.getElementById('step-' + stepId);
+            if (!stepEl) return;
+
+            stepEl.classList.remove('active', 'done');
+
+            if (status === 'running') {
+                stepEl.classList.add('active');
+                stepEl.querySelector('.step-status').textContent = '分析中...';
+            } else if (status === 'done') {
+                stepEl.classList.add('done');
+                stepEl.querySelector('.step-icon').textContent = '✓';
+                stepEl.querySelector('.step-status').textContent = '已完成';
+            }
+        }
+
+        function resetSteps() {
+            Object.keys(steps).forEach(stepId => {
+                const stepEl = document.getElementById('step-' + stepId);
+                if (stepEl) {
+                    stepEl.classList.remove('active', 'done');
+                    stepEl.querySelector('.step-icon').textContent = steps[stepId].index + 1;
+                    stepEl.querySelector('.step-status').textContent = '等待中';
+                }
+            });
+            stageCards = {};
+            updateProgress(0);
+        }
+
+        function showPlaceholder() {
+            const outputContent = document.getElementById('outputContent');
+            outputContent.innerHTML = `
+                <div class="placeholder">
+                    <div class="placeholder-icon">📊</div>
+                    <div class="placeholder-text">输入问题后，分析结果将实时显示在这里</div>
+                    <div class="placeholder-hint">支持竞品分析、市场趋势、政策解读等</div>
+                </div>
+            `;
+        }
+
+        function createStageCard(stageId, stageName, status) {
+            const outputContent = document.getElementById('outputContent');
+
+            // 清除占位符
+            const placeholder = outputContent.querySelector('.placeholder');
+            if (placeholder) placeholder.remove();
+
+            const card = document.createElement('div');
+            card.className = `stage-card ${status}`;
+            card.id = `card-${stageId}`;
+
+            const icon = steps[stageId]?.icon || '📋';
+
+            card.innerHTML = `
+                <div class="stage-card-header">
+                    <div class="stage-card-title">
+                        <div class="stage-card-icon">${icon}</div>
+                        <div class="stage-card-name">${stageName}</div>
+                    </div>
+                    <div class="stage-card-status">
+                        <div class="status-dot"></div>
+                        <span>${status === 'running' ? '分析中...' : '已完成'}</span>
+                    </div>
+                </div>
+                <div class="stage-card-body">
+                    <div class="stage-card-summary">${status === 'running' ? '正在分析，请稍候<span class="typing-cursor"></span>' : '处理完成'}</div>
+                </div>
+            `;
+
+            outputContent.appendChild(card);
+            stageCards[stageId] = card;
+
+            outputContent.scrollTop = outputContent.scrollHeight;
+            return card;
+        }
+
+        function updateStageCard(stageId, status, summary) {
+            let card = stageCards[stageId];
+
+            if (!card) {
+                card = createStageCard(stageId, steps[stageId]?.name || stageId, status);
+            } else {
+                card.className = `stage-card ${status}`;
+
+                const statusEl = card.querySelector('.stage-card-status');
+                statusEl.innerHTML = `
+                    <div class="status-dot"></div>
+                    <span>${status === 'running' ? '分析中...' : '已完成'}</span>
+                `;
+            }
+
+            const summaryEl = card.querySelector('.stage-card-summary');
+            if (summary) {
+                summaryEl.innerHTML = formatSummary(summary);
+            } else if (status === 'running') {
+                summaryEl.innerHTML = '正在分析，请稍候<span class="typing-cursor"></span>';
+            }
+
+            // 更新进度
+            const stageIndex = steps[stageId]?.index || 0;
+            const progress = ((stageIndex + 1) / 5) * 100;
+            updateProgress(progress);
+
+            document.getElementById('outputContent').scrollTop = document.getElementById('outputContent').scrollHeight;
+        }
+
+        function formatSummary(summary) {
+            // 格式化摘要文本，提取关键信息
+            if (!summary) return '';
+
+            // 高亮关键信息
+            let formatted = summary
+                .replace(/类型：([^|]+)/g, '<span class="summary-highlight">类型：$1</span>')
+                .replace(/置信度：([^|]+)/g, '<span class="summary-highlight">置信度：$1</span>')
+                .replace(/向量检索：([^|]+)/g, '<span class="summary-highlight">向量检索：$1</span>')
+                .replace(/SQL查询：([^|]+)/g, '<span class="summary-highlight">SQL查询：$1</span>')
+                .replace(/PEST：([^|]+)/g, '<span class="summary-highlight">PEST：$1</span>')
+                .replace(/波特五力：([^|]+)/g, '<span class="summary-highlight">波特五力：$1</span>')
+                .replace(/SWOT：([^|]+)/g, '<span class="summary-highlight">SWOT：$1</span>')
+                .replace(/4P：([^|]+)/g, '<span class="summary-highlight">4P：$1</span>');
+
+            return formatted;
+        }
+
+        function showReport(reportMarkdown) {
+            const outputContent = document.getElementById('outputContent');
+
+            // 清除所有阶段卡片
+            Object.values(stageCards).forEach(card => card.remove());
+
+            // 解析并渲染 Markdown
+            const html = parseMarkdown(reportMarkdown);
+
+            const reportCard = document.createElement('div');
+            reportCard.className = 'report-card';
+            reportCard.innerHTML = html;
+
+            outputContent.innerHTML = '';
+            outputContent.appendChild(reportCard);
+            outputContent.scrollTop = 0;
+
+            document.getElementById('outputBadge').style.display = 'block';
+            updateProgress(100);
+        }
+
+        function parseMarkdown(md) {
+            if (!md) return '';
+
+            // 简单 Markdown 解析
+            let html = md
+                // 转义 HTML
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                // 标题
+                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                // 粗体
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                // 列表
+                .replace(/^- (.+)$/gm, '<li>$1</li>')
+                .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
+                // 段落
+                .replace(/\n\n/g, '</p><p>')
+                // 包裹列表
+                .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
+                // 替换换行
+                .replace(/\n/g, '<br>');
+
+            // 清理多余的 br
+            html = html.replace(/<br><br><ul>/g, '<ul>');
+            html = html.replace(/<\/ul><br><br>/g, '</ul>');
+
+            return `<div class="report-content"><p>${html}</p></div>`;
+        }
+
+        async function startAnalysis() {
+            if (isAnalyzing) return;
+
+            const question = document.getElementById('question').value.trim();
+            if (!question) {
+                updateStatus('请输入分析问题', 'error');
+                return;
+            }
+
+            isAnalyzing = true;
+            const btn = document.getElementById('analyzeBtn');
+            btn.disabled = true;
+            btn.classList.add('analyzing');
+            btn.textContent = '分析中...';
+
+            resetSteps();
+            showPlaceholder();
+            document.getElementById('outputBadge').style.display = 'none';
+
+            updateStatus('正在连接分析服务...', 'analyzing');
+
+            try {
+                const response = await fetch(`${API_BASE}/analyze_sse`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question })
+                });
+
+                if (!response.ok) {
+                    throw new Error('请求失败: ' + response.status);
+                }
+
+                updateStatus('正在分析中...', 'analyzing');
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // SSE 使用 CRLF (\r\n) 作为换行符
+                    const separator = '\r\n\r\n';
+                    const eventBlocks = buffer.split(separator);
+                    buffer = eventBlocks.pop() || '';
+
+                    for (const block of eventBlocks) {
+                        if (!block.trim()) continue;
+
+                        // 解析事件块
+                        let currentEvent = null;
+                        let dataContent = null;
+
+                        // 按行分割
+                        const lines = block.split('\r\n');
+
+                        for (const line of lines) {
+                            if (line.startsWith('event:')) {
+                                currentEvent = line.substring(6).trim();
+                            }
+                            if (line.startsWith('data:')) {
+                                dataContent = line.substring(5).trim();
+                            }
+                        }
+
+                        // 只有当两个都有值时才处理
+                        if (dataContent && currentEvent) {
+                            handleSSEMessage({ event: currentEvent, data: dataContent });
+                        }
+                    }
+                }
+
+                // 处理缓冲区中剩余的不完整事件
+                if (buffer.trim()) {
+                    let currentEvent = null;
+                    let dataContent = null;
+
+                    const lines = buffer.split('\r\n');
+                    for (const line of lines) {
+                        if (line.startsWith('event:')) {
+                            currentEvent = line.substring(6).trim();
+                        }
+                        if (line.startsWith('data:')) {
+                            dataContent = line.substring(5).trim();
+                        }
+                    }
+
+                    if (dataContent && currentEvent) {
+                        handleSSEMessage({ event: currentEvent, data: dataContent });
+                    }
+                }
+
+                updateStatus('分析完成 ✓', 'success');
+
+            } catch (error) {
+                console.error('SSE Error:', error);
+                updateStatus('连接失败: ' + error.message, 'error');
+            } finally {
+                isAnalyzing = false;
+                btn.disabled = false;
+                btn.classList.remove('analyzing');
+                btn.textContent = '开始分析';
+            }
+        }
+
+        function handleSSEMessage(data) {
+            try {
+                let parsed = typeof data === 'string' ? JSON.parse(data) : data;
+                const eventType = parsed.event;
+                let payload = parsed.data;
+
+                if (typeof payload === 'string') {
+                    payload = JSON.parse(payload);
+                }
+
+                if (eventType === 'progress') {
+                    const stage = payload.stage;
+                    const status = payload.status;
+                    const summary = payload.summary || (payload.data?.summary) || '';
+                    const stageName = payload.stage_name || (steps[stage]?.name || stage);
+
+                    // 更新步骤树
+                    if (stage && steps[stage]) {
+                        updateStep(stage, status);
+                    }
+
+                    // 更新阶段卡片
+                    updateStageCard(stage, status, summary);
+
+                    // 更新状态文本
+                    if (status === 'running') {
+                        updateStatus(`正在${stageName}...`, 'analyzing');
+                    } else {
+                        updateStatus(`${stageName}完成 ✓`, 'analyzing');
+                    }
+
+                } else if (eventType === 'complete') {
+                    if (payload.success) {
+                        updateStatus('分析完成，耗时 ' + (payload.execution_time ? payload.execution_time.toFixed(1) : '?') + 's', 'success');
+                        if (payload.report) {
+                            showReport(payload.report);
+                        }
+                    } else {
+                        updateStatus('分析失败: ' + (payload.error || '未知错误'), 'error');
+                    }
+                } else if (eventType === 'error') {
+                    updateStatus('SSE错误: ' + (payload.error || '未知错误'), 'error');
+                }
+            } catch (e) {
+                console.error('Parse error:', e);
+            }
+        }
+
+        // 页面加载时检查服务状态
+        window.onload = async function() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                if (response.ok) {
+                    updateStatus('服务已连接 ✓', 'idle');
+                }
+            } catch (e) {
+                updateStatus('服务未连接，请确保后端已启动', 'error');
+            }
+        };
+    </script>
+</body>
+</html>
