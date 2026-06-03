@@ -3,538 +3,832 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>市场战略分析 - 智能助手</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#165DFF',
-                        secondary: '#0FC6C2',
-                        success: '#00B42A',
-                        warning: '#FF7D00',
-                        danger: '#F53F3F',
-                        dark: '#1D2129',
-                    }
-                }
-            }
-        }
-    </script>
+    <title>汽车市场智能分析平台</title>
+    <link href="https://cdn.tailwindcss.com" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.0.3/src/regular/style.css" rel="stylesheet">
     <style>
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
 
-        .btn-primary {
-            @apply bg-primary text-white px-6 py-3 rounded-lg font-medium hover:bg-primary/90 transition-all;
-        }
-        .btn-primary:disabled {
-            @apply bg-gray-300 cursor-not-allowed;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
-        .input-field {
-            @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all;
+        body {
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #f5f7fa;
         }
 
-        .step-item {
-            @apply flex items-center gap-3 p-4 rounded-lg transition-all duration-300;
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 6px;
         }
-        .step-item.waiting {
-            @apply bg-gray-50 text-gray-500;
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
         }
-        .step-item.active {
-            @apply bg-blue-50 text-primary border border-primary/30;
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
         }
-        .step-item.done {
-            @apply bg-green-50 text-success;
-        }
-
-        .step-icon {
-            @apply w-10 h-10 rounded-full flex items-center justify-center font-semibold text-lg;
-        }
-        .step-item.waiting .step-icon {
-            @apply bg-gray-200 text-gray-500;
-        }
-        .step-item.active .step-icon {
-            @apply bg-primary text-white animate-pulse;
-        }
-        .step-item.done .step-icon {
-            @apply bg-success text-white;
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a1;
         }
 
-        .stage-card {
-            @apply bg-white rounded-xl border border-gray-200 overflow-hidden mb-4 shadow-sm;
-        }
-        .stage-card-header {
-            @apply px-5 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between;
-        }
-        .stage-card-body {
-            @apply p-5;
-        }
-        .stage-card.running {
-            @apply border-primary/30;
-        }
-        .stage-card.running .stage-card-header {
-            @apply bg-blue-50/50;
+        /* 布局 */
+        .sidebar {
+            width: 240px;
+            min-height: 100vh;
+            background: linear-gradient(180deg, #1e3a5f 0%, #0f2744 100%);
+            position: fixed;
+            left: 0;
+            top: 0;
+            display: flex;
+            flex-direction: column;
         }
 
-        .report-section {
-            @apply bg-white rounded-xl border border-gray-200 overflow-hidden mb-4 shadow-sm;
-        }
-        .report-section-header {
-            @apply px-5 py-4 bg-gradient-to-r from-primary to-secondary text-white;
-        }
-
-        .placeholder {
-            @apply text-center py-20 text-gray-400;
-        }
-        .placeholder-icon {
-            @apply text-6xl mb-4 opacity-50;
+        .main-content {
+            margin-left: 240px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
 
-        /* 打字机光标动画 */
+        /* 侧边栏样式 */
+        .sidebar-logo {
+            padding: 24px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 16px 12px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            color: rgba(255,255,255,0.7);
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 4px;
+        }
+
+        .nav-item:hover {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+
+        .nav-item.active {
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+        }
+
+        .nav-item i {
+            font-size: 20px;
+        }
+
+        /* 顶部栏 */
+        .topbar {
+            background: #fff;
+            padding: 16px 32px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .topbar-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: 600;
+        }
+
+        /* 内容区 */
+        .content-area {
+            flex: 1;
+            padding: 24px 32px;
+            max-width: 1400px;
+        }
+
+        /* 卡片通用样式 */
+        .card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            border: 1px solid #e5e7eb;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .card-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .card-title i {
+            font-size: 20px;
+            color: #3b82f6;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
+        /* 快捷指令 */
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        .quick-btn {
+            padding: 14px 16px;
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .quick-btn:hover {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+
+        .quick-btn i {
+            font-size: 18px;
+            color: #3b82f6;
+        }
+
+        .quick-btn span {
+            font-size: 14px;
+            color: #374151;
+            font-weight: 500;
+        }
+
+        /* 输入区域 */
+        .input-area {
+            margin-top: 20px;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-box {
+            flex: 1;
+            position: relative;
+        }
+
+        .input-box textarea {
+            width: 100%;
+            padding: 16px 20px;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            font-size: 15px;
+            resize: none;
+            outline: none;
+            transition: all 0.2s;
+            font-family: inherit;
+            min-height: 54px;
+            max-height: 120px;
+        }
+
+        .input-box textarea:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+        }
+
+        .send-btn {
+            width: 54px;
+            height: 54px;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            border: none;
+            border-radius: 14px;
+            color: #fff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .send-btn:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(59,130,246,0.3);
+        }
+
+        .send-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .send-btn i {
+            font-size: 22px;
+        }
+
+        /* 思考过程 */
+        .thinking-area {
+            margin-top: 24px;
+        }
+
+        .thinking-card {
+            border-left: 3px solid #8b5cf6;
+        }
+
+        .thinking-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #8b5cf6;
+            font-weight: 600;
+        }
+
+        .thinking-header i {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .thinking-content {
+            padding: 16px 20px;
+            color: #4b5563;
+            line-height: 1.8;
+            font-size: 14px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        /* 打字机光标 */
         .typing-cursor {
             display: inline-block;
             width: 2px;
-            height: 1.2em;
-            background: #165DFF;
+            height: 16px;
+            background: #3b82f6;
             margin-left: 2px;
             animation: blink 0.8s infinite;
             vertical-align: middle;
         }
+
         @keyframes blink {
             0%, 100% { opacity: 1; }
             50% { opacity: 0; }
         }
 
-        /* 流式输出文字容器 */
-        .streaming-text {
-            white-space: pre-wrap;
-            word-break: break-word;
+        /* 搜索建议 */
+        .suggestions-area {
+            margin-top: 20px;
+        }
+
+        .suggestion-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .suggestion-tag {
+            padding: 8px 16px;
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 20px;
+            font-size: 13px;
+            color: #0369a1;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .suggestion-tag:hover {
+            background: #e0f2fe;
+            border-color: #7dd3fc;
+        }
+
+        /* 相关问题 */
+        .questions-area {
+            margin-top: 20px;
+        }
+
+        .question-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .question-item {
+            padding: 14px 18px;
+            background: #fafafa;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .question-item:hover {
+            background: #f0f0f0;
+        }
+
+        .question-item i {
+            font-size: 16px;
+            color: #6b7280;
+        }
+
+        .question-item span {
+            font-size: 14px;
+            color: #374151;
+        }
+
+        /* 分析结果区 */
+        .result-area {
+            margin-top: 24px;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .core-insights .card-body {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        }
+
+        .insight-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+        }
+
+        .insight-item:last-child {
+            border-bottom: none;
+        }
+
+        .insight-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .insight-icon i {
+            font-size: 14px;
+            color: #d97706;
+        }
+
+        .insight-text {
+            font-size: 14px;
+            color: #92400e;
+            line-height: 1.6;
+        }
+
+        /* 详细分析 */
+        .detail-analysis .card-body {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .analysis-section {
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-title i {
+            color: #3b82f6;
+        }
+
+        .section-content {
+            font-size: 14px;
+            color: #4b5563;
+            line-height: 1.8;
+        }
+
+        /* 进度指示 */
+        .progress-indicator {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 20px;
+            background: #f8fafc;
+            border-radius: 10px;
+            margin-bottom: 16px;
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #6b7280;
+        }
+
+        .progress-step.active {
+            color: #3b82f6;
+            font-weight: 500;
+        }
+
+        .progress-step.done {
+            color: #10b981;
+        }
+
+        .progress-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #d1d5db;
+        }
+
+        .progress-step.active .progress-dot {
+            background: #3b82f6;
+            animation: pulse-dot 1.5s infinite;
+        }
+
+        .progress-step.done .progress-dot {
+            background: #10b981;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.3); opacity: 0.7; }
+        }
+
+        .progress-line {
+            flex: 1;
+            height: 2px;
+            background: #e5e7eb;
+            position: relative;
+        }
+
+        .progress-line-fill {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            background: #3b82f6;
+            transition: width 0.3s;
+        }
+
+        /* 思考过程列表 */
+        .thinking-stages {
+            padding: 0;
+        }
+
+        .thinking-stage {
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px dashed #e5e7eb;
+        }
+
+        .thinking-stage:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .stage-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .stage-badge {
+            padding: 4px 10px;
+            background: #ede9fe;
+            color: #7c3aed;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .stage-badge.done {
+            background: #d1fae5;
+            color: #059669;
+        }
+
+        .stage-name {
+            font-weight: 600;
+            color: #1f2937;
+            font-size: 14px;
+        }
+
+        .stage-content {
+            color: #4b5563;
+            font-size: 14px;
+            line-height: 1.7;
+            padding-left: 36px;
+        }
+
+        /* 隐藏元素 */
+        .hidden {
+            display: none !important;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
-    <div class="max-w-6xl mx-auto p-6">
-        <!-- Header -->
-        <header class="mb-6">
-            <div class="flex items-center gap-3">
-                <div class="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-                    <i class="fa fa-car text-white text-xl"></i>
-                </div>
-                <div>
-                    <h1 class="text-2xl font-bold text-gray-800">市场战略分析</h1>
-                    <p class="text-sm text-gray-500">基于 AI 的汽车行业智能分析助手</p>
-                </div>
-            </div>
-        </header>
-
-        <!-- Input Section -->
-        <div class="bg-white rounded-xl p-5 mb-6 shadow-sm border border-gray-200">
-            <div class="flex gap-4">
-                <input type="text" id="question" placeholder="例如：分析比亚迪在20-30万纯电SUV市场的竞品"
-                       value="分析比亚迪的市场战略"
-                       class="input-field flex-1">
-                <button class="btn-primary" id="analyzeBtn" onclick="startAnalysis()">
-                    <i class="fa fa-play mr-2"></i>开始分析
-                </button>
-            </div>
-        </div>
-
-        <!-- Status Bar -->
-        <div class="bg-white rounded-lg p-4 mb-6 shadow-sm border border-gray-200 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full flex items-center justify-center" id="statusIcon">
-                    <i class="fa fa-check-circle text-success"></i>
-                </div>
-                <span id="statusText" class="text-gray-600">准备就绪，请输入问题开始分析</span>
-            </div>
-            <div class="flex items-center gap-2">
-                <span class="text-sm text-gray-400">进度</span>
-                <div class="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div id="progressBar" class="h-full bg-primary transition-all duration-300" style="width: 0%"></div>
-                </div>
-                <span id="progressText" class="text-sm text-gray-500 w-12">0%</span>
-            </div>
-        </div>
-
-        <!-- Main Layout -->
-        <div class="grid grid-cols-4 gap-6">
-            <!-- Steps Panel -->
-            <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
-                <h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">分析流程</h3>
-
-                <div class="space-y-3">
-                    <div class="step-item waiting" id="step-stage1">
-                        <div class="step-icon">1</div>
-                        <div>
-                            <div class="font-medium">意图识别</div>
-                            <div class="text-xs opacity-70 step-status">等待中</div>
-                        </div>
+<body>
+    <div class="flex">
+        <!-- 左侧导航 -->
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
+                        <i class="ph ph-car text-white text-xl"></i>
                     </div>
-
-                    <div class="step-item waiting" id="step-stage2">
-                        <div class="step-icon">2</div>
-                        <div>
-                            <div class="font-medium">数据检索</div>
-                            <div class="text-xs opacity-70 step-status">等待中</div>
-                        </div>
-                    </div>
-
-                    <div class="step-item waiting" id="step-stage3">
-                        <div class="step-icon">3</div>
-                        <div>
-                            <div class="font-medium">战略分析</div>
-                            <div class="text-xs opacity-70 step-status">等待中</div>
-                        </div>
-                    </div>
-
-                    <div class="step-item waiting" id="step-stage4">
-                        <div class="step-icon">4</div>
-                        <div>
-                            <div class="font-medium">品牌分析</div>
-                            <div class="text-xs opacity-70 step-status">等待中</div>
-                        </div>
-                    </div>
-
-                    <div class="step-item waiting" id="step-stage5">
-                        <div class="step-icon">5</div>
-                        <div>
-                            <div class="font-medium">报告生成</div>
-                            <div class="text-xs opacity-70 step-status">等待中</div>
-                        </div>
+                    <div>
+                        <div class="text-white font-semibold">智能分析</div>
+                        <div class="text-white/50 text-xs">市场战略决策平台</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Output Panel -->
-            <div class="col-span-3">
-                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-                        <span class="font-medium text-gray-700">实时分析结果</span>
-                        <span id="outputBadge" class="hidden px-3 py-1 bg-success/10 text-success text-sm rounded-full">
-                            <i class="fa fa-check mr-1"></i>已完成
-                        </span>
+            <nav class="sidebar-nav">
+                <div class="nav-item active">
+                    <i class="ph ph-chart-line-up"></i>
+                    <span>市场分析</span>
+                </div>
+                <div class="nav-item">
+                    <i class="ph ph-users-three"></i>
+                    <span>竞品分析</span>
+                </div>
+                <div class="nav-item">
+                    <i class="ph ph-newspaper"></i>
+                    <span>政策解读</span>
+                </div>
+                <div class="nav-item">
+                    <i class="ph ph-lightbulb"></i>
+                    <span>行业洞察</span>
+                </div>
+                <div class="nav-item">
+                    <i class="ph ph-file-text"></i>
+                    <span>报告中心</span>
+                </div>
+            </nav>
+
+            <div class="p-4 border-t border-white/10">
+                <div class="nav-item">
+                    <i class="ph ph-gear"></i>
+                    <span>系统设置</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            <!-- 顶部栏 -->
+            <header class="topbar">
+                <h1 class="topbar-title">汽车市场智能分析平台</h1>
+                <div class="flex items-center gap-4">
+                    <button class="p-2 hover:bg-gray-100 rounded-lg">
+                        <i class="ph ph-bell text-xl text-gray-500"></i>
+                    </button>
+                    <div class="user-avatar">AI</div>
+                </div>
+            </header>
+
+            <!-- 内容区域 -->
+            <div class="content-area">
+                <!-- 快捷指令 -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">
+                            <i class="ph ph-lightning"></i>
+                            <span>快捷指令</span>
+                        </div>
                     </div>
-                    <div class="output-content" id="outputContent">
-                        <div class="placeholder">
-                            <div class="placeholder-icon">📊</div>
-                            <div class="text-lg mb-2">输入问题后，分析结果将实时显示在这里</div>
-                            <div class="text-sm">支持竞品分析、市场趋势、政策解读等</div>
+                    <div class="card-body">
+                        <div class="quick-actions">
+                            <div class="quick-btn" onclick="setQuestion('分析当前新能源汽车市场份额及竞争格局')">
+                                <i class="ph ph-chart-pie-slice"></i>
+                                <span>市场分析</span>
+                            </div>
+                            <div class="quick-btn" onclick="setQuestion('对比亚迪、特斯拉、蔚来进行竞品分析')">
+                                <i class="ph ph-users"></i>
+                                <span>竞品分析</span>
+                            </div>
+                            <div class="quick-btn" onclick="setQuestion('解读最新新能源汽车补贴政策对市场的影响')">
+                                <i class="ph ph-scroll"></i>
+                                <span>政策解读</span>
+                            </div>
+                            <div class="quick-btn" onclick="setQuestion('分析2024年SUV市场发展趋势与机会')">
+                                <i class="ph ph-trend-up"></i>
+                                <span>行业洞察</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 输入区域 -->
+                <div class="input-area">
+                    <div class="input-wrapper">
+                        <div class="input-box">
+                            <textarea id="questionInput" placeholder="输入您想了解的市场分析问题，如：分析比亚迪在20-30万纯电SUV市场的竞争态势" rows="1"></textarea>
+                        </div>
+                        <button class="send-btn" id="sendBtn" onclick="startAnalysis()">
+                            <i class="ph ph-paper-plane-tilt"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 思考过程区域 -->
+                <div id="thinkingArea" class="thinking-area hidden">
+                    <div class="card thinking-card">
+                        <div class="card-header">
+                            <div class="thinking-header">
+                                <i class="ph ph-brain"></i>
+                                <span>深度思考中...</span>
+                            </div>
+                        </div>
+                        <div class="thinking-content" id="thinkingContent">
+                            <!-- 思考过程动态显示 -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 搜索建议 -->
+                <div id="suggestionsArea" class="suggestions-area hidden">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="ph ph-magnifying-glass"></i>
+                                <span>搜索建议</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="suggestion-tags" id="suggestionTags">
+                                <!-- 动态生成 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 相关问题 -->
+                <div id="questionsArea" class="questions-area hidden">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <i class="ph ph-chat-circle-dots"></i>
+                                <span>相关问题</span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="question-list" id="questionList">
+                                <!-- 动态生成 -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 分析结果区域 -->
+                <div id="resultArea" class="result-area hidden">
+                    <div class="result-grid">
+                        <!-- 核心观点 -->
+                        <div class="card core-insights">
+                            <div class="card-header" style="background: #fef3c7;">
+                                <div class="card-title" style="color: #92400e;">
+                                    <i class="ph ph-star" style="color: #d97706;"></i>
+                                    <span>核心观点</span>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="insightsList">
+                                    <!-- 动态生成 -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 详细分析 -->
+                        <div class="card detail-analysis">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <i class="ph ph-article"></i>
+                                    <span>详细分析</span>
+                                </div>
+                                <button class="p-2 hover:bg-gray-100 rounded-lg">
+                                    <i class="ph ph-export text-gray-500"></i>
+                                </button>
+                            </div>
+                            <div class="card-body" id="analysisContent">
+                                <!-- 动态生成 -->
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </main>
     </div>
 
     <script>
         const API_BASE = 'http://localhost:8000';
         let isAnalyzing = false;
-        let stageCards = {};
-        let reportContainer = null;
-        let streamingTextElement = null;
-        let streamingInterval = null;
 
-        const steps = {
-            'stage1': { name: '意图识别', index: 0, icon: '🎯' },
-            'stage2': { name: '数据检索', index: 1, icon: '🔍' },
-            'stage3': { name: '战略分析', index: 2, icon: '📈' },
-            'stage4': { name: '品牌分析', index: 3, icon: '🏢' },
-            'stage5': { name: '报告生成', index: 4, icon: '📝' }
-        };
+        const steps = [
+            { id: 'stage1', name: '意图识别', icon: 'ph-target' },
+            { id: 'stage2', name: '数据检索', icon: 'ph-database' },
+            { id: 'stage3', name: '战略分析', icon: 'ph-chart-line-up' },
+            { id: 'stage4', name: '品牌分析', icon: 'ph-buildings' },
+            { id: 'stage5', name: '报告生成', icon: 'ph-file-text' }
+        ];
 
-        function updateStatus(message, type = 'idle') {
-            const statusText = document.getElementById('statusText');
-            const statusIcon = document.getElementById('statusIcon');
+        // 自动调整textarea高度
+        const questionInput = document.getElementById('questionInput');
+        questionInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
 
-            statusText.textContent = message;
-
-            const iconClass = type === 'success' ? 'fa-check-circle text-success' :
-                              type === 'error' ? 'fa-times-circle text-danger' :
-                              type === 'analyzing' ? 'fa-spinner fa-spin text-warning' :
-                              'fa-check-circle text-success';
-
-            statusIcon.innerHTML = `<i class="fa ${iconClass}"></i>`;
-        }
-
-        function updateProgress(percent) {
-            const progressBar = document.getElementById('progressBar');
-            const progressText = document.getElementById('progressText');
-            progressBar.style.width = percent + '%';
-            progressText.textContent = Math.round(percent) + '%';
-        }
-
-        function updateStep(stepId, status) {
-            const stepEl = document.getElementById('step-' + stepId);
-            if (!stepEl) return;
-
-            stepEl.classList.remove('waiting', 'active', 'done');
-            stepEl.classList.add(status === 'running' ? 'active' : status === 'done' ? 'done' : 'waiting');
-
-            const statusEl = stepEl.querySelector('.step-status');
-            if (status === 'running') {
-                stepEl.querySelector('.step-icon').textContent = steps[stepId].index + 1;
-                statusEl.textContent = '分析中...';
-            } else if (status === 'done') {
-                stepEl.querySelector('.step-icon').innerHTML = '<i class="fa fa-check"></i>';
-                statusEl.textContent = '已完成';
-            } else {
-                stepEl.querySelector('.step-icon').textContent = steps[stepId].index + 1;
-                statusEl.textContent = '等待中';
+        // 回车发送
+        questionInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                startAnalysis();
             }
+        });
+
+        // 设置问题
+        function setQuestion(question) {
+            questionInput.value = question;
+            questionInput.style.height = 'auto';
+            questionInput.style.height = questionInput.scrollHeight + 'px';
+            questionInput.focus();
         }
 
-        function resetSteps() {
-            Object.keys(steps).forEach(stepId => {
-                const stepEl = document.getElementById('step-' + stepId);
-                if (stepEl) {
-                    stepEl.classList.remove('active', 'done');
-                    stepEl.classList.add('waiting');
-                    stepEl.querySelector('.step-icon').textContent = steps[stepId].index + 1;
-                    stepEl.querySelector('.step-status').textContent = '等待中';
-                }
-            });
-            stageCards = {};
-            updateProgress(0);
-
-            // 清除流式输出
-            if (streamingInterval) {
-                clearInterval(streamingInterval);
-                streamingInterval = null;
-            }
-        }
-
-        function showPlaceholder() {
-            const outputContent = document.getElementById('outputContent');
-            outputContent.innerHTML = `
-                <div class="placeholder">
-                    <div class="placeholder-icon">📊</div>
-                    <div class="text-lg mb-2">输入问题后，分析结果将实时显示在这里</div>
-                    <div class="text-sm">支持竞品分析、市场趋势、政策解读等</div>
-                </div>
-            `;
-        }
-
-        function createStageCard(stageId, stageName, status) {
-            const outputContent = document.getElementById('outputContent');
-
-            const placeholder = outputContent.querySelector('.placeholder');
-            if (placeholder) placeholder.remove();
-
-            const card = document.createElement('div');
-            card.className = `stage-card ${status}`;
-            card.id = `card-${stageId}`;
-
-            const icon = steps[stageId]?.icon || '📋';
-
-            card.innerHTML = `
-                <div class="stage-card-header">
-                    <div class="flex items-center gap-3">
-                        <span class="text-2xl">${icon}</span>
-                        <span class="font-semibold text-gray-800">${stageName}</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <div class="w-2 h-2 rounded-full ${status === 'running' ? 'bg-primary animate-pulse' : 'bg-success'}"></div>
-                        <span class="text-sm ${status === 'running' ? 'text-primary' : 'text-success'}">
-                            ${status === 'running' ? '分析中...' : '已完成'}
-                        </span>
-                    </div>
-                </div>
-                <div class="stage-card-body">
-                    <div class="text-gray-600 streaming-text">${status === 'running' ? '正在分析，请稍候<span class="typing-cursor"></span>' : '处理完成'}</div>
-                </div>
-            `;
-
-            outputContent.appendChild(card);
-            stageCards[stageId] = card;
-            outputContent.scrollTop = outputContent.scrollHeight;
-            return card;
-        }
-
-        function updateStageCard(stageId, status, summary) {
-            let card = stageCards[stageId];
-
-            if (!card) {
-                card = createStageCard(stageId, steps[stageId]?.name || stageId, status);
-            } else {
-                card.className = `stage-card ${status}`;
-
-                const header = card.querySelector('.stage-card-header');
-                header.innerHTML = `
-                    <div class="flex items-center gap-3">
-                        <span class="text-2xl">${steps[stageId]?.icon || '📋'}</span>
-                        <span class="font-semibold text-gray-800">${steps[stageId]?.name || stageId}</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <div class="w-2 h-2 rounded-full ${status === 'running' ? 'bg-primary animate-pulse' : 'bg-success'}"></div>
-                        <span class="text-sm ${status === 'running' ? 'text-primary' : 'text-success'}">
-                            ${status === 'running' ? '分析中...' : '已完成'}
-                        </span>
-                    </div>
-                `;
-            }
-
-            const body = card.querySelector('.stage-card-body');
-            if (summary) {
-                // 流式显示摘要
-                startStreaming(body, formatSummary(summary));
-            } else if (status === 'running') {
-                body.innerHTML = `<div class="text-gray-600">正在分析，请稍候<span class="typing-cursor"></span></div>`;
-            }
-
-            const stageIndex = steps[stageId]?.index || 0;
-            const progress = ((stageIndex + 1) / 5) * 100;
-            updateProgress(progress);
-
-            document.getElementById('outputContent').scrollTop = document.getElementById('outputContent').scrollHeight;
-        }
-
-        // 流式输出函数 - 模拟打字机效果
-        function startStreaming(container, text) {
-            if (streamingInterval) {
-                clearInterval(streamingInterval);
-            }
-
-            container.innerHTML = `<div class="streaming-text"></div><span class="typing-cursor"></span>`;
-            const textElement = container.querySelector('.streaming-text');
-            let index = 0;
-
-            streamingInterval = setInterval(() => {
-                if (index < text.length) {
-                    // 每次显示几个字符，模拟流式效果
-                    const chunkSize = Math.floor(Math.random() * 3) + 1;
-                    textElement.textContent = text.substring(0, index + chunkSize);
-                    index += chunkSize;
-
-                    // 滚动到底部
-                    const outputContent = document.getElementById('outputContent');
-                    outputContent.scrollTop = outputContent.scrollHeight;
-                } else {
-                    // 完成，移除光标
-                    const cursor = container.querySelector('.typing-cursor');
-                    if (cursor) cursor.remove();
-                    clearInterval(streamingInterval);
-                    streamingInterval = null;
-                }
-            }, 30); // 每30ms显示一点
-        }
-
-        function formatSummary(summary) {
-            if (!summary) return '';
-            let formatted = summary
-                .replace(/类型：([^|]+)/g, '<span class="text-primary font-medium">类型：$1</span>')
-                .replace(/置信度：([^|]+)/g, '<span class="text-secondary">置信度：$1</span>')
-                .replace(/向量检索：([^|]+)/g, '<span class="text-success">向量检索：$1</span>')
-                .replace(/SQL查询：([^|]+)/g, '<span class="text-success">SQL查询：$1</span>')
-                .replace(/PEST：([^|]+)/g, '<span class="text-warning">PEST：$1</span>')
-                .replace(/波特五力：([^|]+)/g, '<span class="text-warning">波特五力：$1</span>')
-                .replace(/SWOT：([^|]+)/g, '<span class="text-warning">SWOT：$1</span>')
-                .replace(/4P：([^|]+)/g, '<span class="text-warning">4P：$1</span>');
-            return formatted;
-        }
-
-        function parseMarkdown(md) {
-            if (!md) return '';
-
-            let html = md
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold text-gray-800 mt-4 mb-2">$1</h3>')
-                .replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold text-gray-900 mt-6 mb-3 pb-2 border-b">$1</h2>')
-                .replace(/\*\*(.+?)\*\*/g, '<strong class="text-gray-900">$1</strong>')
-                .replace(/^- (.+)$/gm, '<li class="ml-4 text-gray-700">$1</li>')
-                .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 text-gray-700">$2</li>')
-                .replace(/\n\n/g, '<br><br>')
-                .replace(/\n/g, '<br>');
-
-            return html;
-        }
-
-        // 创建报告容器（追加模式，不覆盖阶段卡片）
-        function createReportContainer() {
-            const outputContent = document.getElementById('outputContent');
-
-            const reportSection = document.createElement('div');
-            reportSection.className = 'report-section';
-            reportSection.id = 'reportSection';
-
-            reportSection.innerHTML = `
-                <div class="report-section-header">
-                    <h2 class="text-xl font-bold">📊 分析报告</h2>
-                    <p class="text-sm opacity-80 mt-1">实时生成中...</p>
-                </div>
-                <div class="p-5">
-                    <div class="streaming-text text-gray-700 leading-relaxed" id="reportText"></div>
-                </div>
-            `;
-
-            outputContent.appendChild(reportSection);
-            outputContent.scrollTop = outputContent.scrollHeight;
-
-            return document.getElementById('reportText');
-        }
-
-        // 流式显示报告
-        function streamReport(markdown) {
-            const reportText = createReportContainer();
-            const plainText = stripHtml(markdown);
-
-            let index = 0;
-            const speed = 15; // 速度调整，越小越快
-
-            streamingInterval = setInterval(() => {
-                if (index < plainText.length) {
-                    const chunkSize = Math.floor(Math.random() * 5) + 2;
-                    const currentText = plainText.substring(0, index + chunkSize);
-                    index += chunkSize;
-
-                    // 实时解析并渲染 Markdown
-                    reportText.innerHTML = parseMarkdown(currentText) + '<span class="typing-cursor"></span>';
-
-                    // 滚动到底部
-                    const outputContent = document.getElementById('outputContent');
-                    outputContent.scrollTop = outputContent.scrollHeight;
-                } else {
-                    // 完成
-                    reportText.innerHTML = parseMarkdown(markdown);
-                    document.getElementById('outputBadge').classList.remove('hidden');
-                    clearInterval(streamingInterval);
-                    streamingInterval = null;
-                }
-            }, speed);
-        }
-
-        // 去除 HTML 标签，只保留纯文本用于流式显示
-        function stripHtml(html) {
-            return html
-                .replace(/<[^>]*>/g, '')
-                .replace(/&amp;/g, '&')
-                .replace(/&lt;/g, '<')
-                .replace(/&gt;/g, '>');
-        }
-
+        // 开始分析
         async function startAnalysis() {
             if (isAnalyzing) return;
 
-            const question = document.getElementById('question').value.trim();
+            const question = questionInput.value.trim();
             if (!question) {
-                updateStatus('请输入分析问题', 'error');
+                alert('请输入分析问题');
                 return;
             }
 
             isAnalyzing = true;
-            const btn = document.getElementById('analyzeBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-2"></i>分析中...';
+            const sendBtn = document.getElementById('sendBtn');
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<i class="ph ph-spinner" style="animation: spin 1s linear infinite;"></i>';
 
-            resetSteps();
-            showPlaceholder();
-            document.getElementById('outputBadge').classList.add('hidden');
+            // 显示思考区域
+            showThinkingArea();
+            initThinkingContent();
 
-            updateStatus('正在连接分析服务...', 'analyzing');
+            // 隐藏结果区域
+            document.getElementById('resultArea').classList.add('hidden');
+            document.getElementById('suggestionsArea').classList.add('hidden');
+            document.getElementById('questionsArea').classList.add('hidden');
 
             try {
                 const response = await fetch(`${API_BASE}/analyze_sse`, {
@@ -544,10 +838,8 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error('请求失败: ' + response.status);
+                    throw new Error('请求失败');
                 }
-
-                updateStatus('正在分析中...', 'analyzing');
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
@@ -558,7 +850,6 @@
                     if (done) break;
 
                     buffer += decoder.decode(value, { stream: true });
-
                     const separator = '\r\n\r\n';
                     const eventBlocks = buffer.split(separator);
                     buffer = eventBlocks.pop() || '';
@@ -570,7 +861,6 @@
                         let dataContent = null;
 
                         const lines = block.split('\r\n');
-
                         for (const line of lines) {
                             if (line.startsWith('event:')) {
                                 currentEvent = line.substring(6).trim();
@@ -586,19 +876,141 @@
                     }
                 }
 
-                updateStatus('分析完成 ✓', 'success');
+                // 分析完成
+                document.querySelector('.thinking-header').innerHTML = `
+                    <i class="ph ph-check-circle" style="color: #10b981;"></i>
+                    <span style="color: #10b981;">思考完成</span>
+                `;
 
             } catch (error) {
                 console.error('SSE Error:', error);
-                updateStatus('连接失败: ' + error.message, 'error');
+                document.querySelector('.thinking-header').innerHTML = `
+                    <i class="ph ph-x-circle" style="color: #ef4444;"></i>
+                    <span style="color: #ef4444;">分析失败: ${error.message}</span>
+                `;
             } finally {
                 isAnalyzing = false;
-                const btn = document.getElementById('analyzeBtn');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa fa-play mr-2"></i>开始分析';
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = '<i class="ph ph-paper-plane-tilt"></i>';
             }
         }
 
+        // 显示思考区域
+        function showThinkingArea() {
+            const thinkingArea = document.getElementById('thinkingArea');
+            thinkingArea.classList.remove('hidden');
+        }
+
+        // 初始化思考内容
+        function initThinkingContent() {
+            const content = document.getElementById('thinkingContent');
+
+            // 添加进度指示器
+            const progressHtml = `
+                <div class="progress-indicator">
+                    ${steps.map((step, i) => `
+                        <div class="progress-step" id="progress-${step.id}">
+                            <div class="progress-dot"></div>
+                            <span>${step.name}</span>
+                        </div>
+                    `).join('<div class="progress-line"><div class="progress-line-fill" id="progressFill" style="width: 0%"></div></div>')}
+                </div>
+                <div class="thinking-stages" id="thinkingStages">
+                    ${steps.map(step => `
+                        <div class="thinking-stage" id="stage-${step.id}">
+                            <div class="stage-header">
+                                <span class="stage-badge" id="badge-${step.id}">待处理</span>
+                                <span class="stage-name">${step.name}</span>
+                            </div>
+                            <div class="stage-content" id="content-${step.id}">
+                                <span class="typing-cursor"></span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            content.innerHTML = progressHtml;
+        }
+
+        // 更新进度
+        function updateProgress(stageId, status) {
+            const stepIndex = steps.findIndex(s => s.id === stageId);
+
+            // 更新进度指示器
+            steps.forEach((step, i) => {
+                const el = document.getElementById(`progress-${step.id}`);
+                if (!el) return;
+                el.classList.remove('active', 'done');
+
+                if (i < stepIndex) {
+                    el.classList.add('done');
+                } else if (i === stepIndex) {
+                    el.classList.add('active');
+                }
+            });
+
+            // 更新进度条
+            const progressFill = document.getElementById('progressFill');
+            if (progressFill) {
+                const progress = ((stepIndex + 1) / steps.length) * 100;
+                progressFill.style.width = progress + '%';
+            }
+
+            // 更新阶段状态
+            const badge = document.getElementById(`badge-${stageId}`);
+            if (badge) {
+                if (status === 'running') {
+                    badge.textContent = '分析中';
+                    badge.classList.remove('done');
+                } else if (status === 'done') {
+                    badge.textContent = '完成';
+                    badge.classList.add('done');
+                }
+            }
+        }
+
+        // 流式显示文本
+        function streamText(elementId, text) {
+            const element = document.getElementById(`content-${elementId}`);
+            if (!element) return;
+
+            let index = 0;
+            element.innerHTML = '';
+
+            const interval = setInterval(() => {
+                if (index < text.length) {
+                    const chunkSize = Math.floor(Math.random() * 3) + 1;
+                    const displayText = text.substring(0, index + chunkSize);
+                    element.innerHTML = formatThinkingText(displayText) + '<span class="typing-cursor"></span>';
+                    index += chunkSize;
+
+                    // 滚动到底部
+                    const content = document.getElementById('thinkingContent');
+                    content.scrollTop = content.scrollHeight;
+                } else {
+                    element.innerHTML = formatThinkingText(text);
+                    clearInterval(interval);
+                }
+            }, 25);
+        }
+
+        // 格式化思考文本
+        function formatThinkingText(text) {
+            if (!text) return '';
+            return text
+                .replace(/\n/g, '<br>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/类型：/g, '<span style="color: #3b82f6;">类型：</span>')
+                .replace(/置信度：/g, '<span style="color: #8b5cf6;">置信度：</span>')
+                .replace(/向量检索：/g, '<span style="color: #10b981;">向量检索：</span>')
+                .replace(/SQL查询：/g, '<span style="color: #10b981;">SQL查询：</span>')
+                .replace(/PEST：/g, '<span style="color: #f59e0b;">PEST：</span>')
+                .replace(/波特五力：/g, '<span style="color: #f59e0b;">波特五力：</span>')
+                .replace(/SWOT：/g, '<span style="color: #f59e0b;">SWOT：</span>')
+                .replace(/4P：/g, '<span style="color: #f59e0b;">4P：</span>');
+        }
+
+        // 处理SSE消息
         function handleSSEMessage(data) {
             try {
                 let parsed = typeof data === 'string' ? JSON.parse(data) : data;
@@ -612,48 +1024,170 @@
                 if (eventType === 'progress') {
                     const stage = payload.stage;
                     const status = payload.status;
-                    const summary = payload.summary || (payload.data?.summary) || '';
-                    const stageName = payload.stage_name || (steps[stage]?.name || stage);
+                    const summary = payload.summary || '';
 
-                    if (stage && steps[stage]) {
-                        updateStep(stage, status);
+                    if (stage) {
+                        updateProgress(stage, status);
                     }
 
-                    updateStageCard(stage, status, summary);
-
-                    if (status === 'running') {
-                        updateStatus(`正在${stageName}...`, 'analyzing');
-                    } else {
-                        updateStatus(`${stageName}完成 ✓`, 'analyzing');
+                    if (summary) {
+                        streamText(stage, summary);
                     }
 
                 } else if (eventType === 'complete') {
                     if (payload.success) {
-                        updateStatus('分析完成，耗时 ' + (payload.execution_time ? payload.execution_time.toFixed(1) : '?') + 's', 'success');
-                        if (payload.report) {
-                            // 流式显示报告（追加到现有内容后面）
-                            streamReport(payload.report);
-                        }
-                    } else {
-                        updateStatus('分析失败: ' + (payload.error || '未知错误'), 'error');
+                        showResults(payload);
                     }
-                } else if (eventType === 'error') {
-                    updateStatus('SSE错误: ' + (payload.error || '未知错误'), 'error');
                 }
             } catch (e) {
                 console.error('Parse error:', e);
             }
         }
 
-        // 检查服务状态
+        // 显示结果
+        function showResults(data) {
+            const resultArea = document.getElementById('resultArea');
+            resultArea.classList.remove('hidden');
+
+            // 生成核心观点
+            const insightsList = document.getElementById('insightsList');
+            const insights = generateInsights(data);
+            insightsList.innerHTML = insights.map(insight => `
+                <div class="insight-item">
+                    <div class="insight-icon">
+                        <i class="${insight.icon}"></i>
+                    </div>
+                    <div class="insight-text">${insight.text}</div>
+                </div>
+            `).join('');
+
+            // 生成详细分析
+            const analysisContent = document.getElementById('analysisContent');
+            analysisContent.innerHTML = generateAnalysisContent(data.report);
+
+            // 生成搜索建议
+            const suggestionsArea = document.getElementById('suggestionsArea');
+            suggestionsArea.classList.remove('hidden');
+            const suggestionTags = document.getElementById('suggestionTags');
+            const suggestions = generateSuggestions(data);
+            suggestionTags.innerHTML = suggestions.map(s => `
+                <div class="suggestion-tag" onclick="setQuestion('${s}')">${s}</div>
+            `).join('');
+
+            // 生成相关问题
+            const questionsArea = document.getElementById('questionsArea');
+            questionsArea.classList.remove('hidden');
+            const questionList = document.getElementById('questionList');
+            const questions = generateQuestions(data);
+            questionList.innerHTML = questions.map(q => `
+                <div class="question-item" onclick="setQuestion('${q}')">
+                    <i class="ph ph-question"></i>
+                    <span>${q}</span>
+                </div>
+            `).join('');
+
+            // 滚动到结果
+            resultArea.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // 生成核心观点
+        function generateInsights(data) {
+            const insights = [];
+            const intentType = data.intent_type || '';
+
+            insights.push({
+                icon: 'ph ph-target',
+                text: `分析类型：${intentType}`
+            });
+
+            if (data.execution_time) {
+                insights.push({
+                    icon: 'ph ph-timer',
+                    text: `分析耗时：${data.execution_time.toFixed(1)}秒`
+                });
+            }
+
+            insights.push({
+                icon: 'ph ph-chart-line-up',
+                text: '已完成多维度战略分析'
+            });
+
+            return insights;
+        }
+
+        // 生成分析内容
+        function generateAnalysisContent(markdown) {
+            if (!markdown) return '<p>暂无分析内容</p>';
+
+            // 简单的Markdown解析
+            let html = markdown
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/^### (.+)$/gm, '<div class="section-title"><i class="ph ph-dot-outline"></i>$1</div>')
+                .replace(/^## (.+)$/gm, '<div class="section-title" style="font-size:16px;"><i class="ph ph-minus"></i>$1</div>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/^- (.+)$/gm, '<div style="margin-left:16px;margin-bottom:6px;">• $1</div>')
+                .replace(/^(\d+)\. (.+)$/gm, '<div style="margin-left:16px;margin-bottom:6px;">$1. $2</div>')
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>');
+
+            return `<p>${html}</p>`;
+        }
+
+        // 生成搜索建议
+        function generateSuggestions(data) {
+            const intentType = data.intent_type || '';
+            const suggestions = [];
+
+            if (intentType.includes('竞品') || intentType.includes('竞争')) {
+                suggestions.push('查看竞品价格趋势');
+                suggestions.push('对比市场份额变化');
+                suggestions.push('分析用户评价差异');
+            } else if (intentType.includes('市场') || intentType.includes('趋势')) {
+                suggestions.push('查看细分市场数据');
+                suggestions.push('分析消费者偏好');
+                suggestions.push('预测未来增长');
+            } else {
+                suggestions.push('查看更多品牌分析');
+                suggestions.push('获取最新市场报告');
+                suggestions.push('对比历史数据');
+            }
+
+            return suggestions;
+        }
+
+        // 生成相关问题
+        function generateQuestions(data) {
+            const intentType = data.intent_type || '';
+            const questions = [];
+
+            if (intentType.includes('竞品') || intentType.includes('竞争')) {
+                questions.push('该市场的增长潜力如何？');
+                questions.push('主要竞争对手的优势是什么？');
+                questions.push('价格战对市场格局的影响？');
+            } else if (intentType.includes('市场') || intentType.includes('趋势')) {
+                questions.push('政策对市场的影响有多大？');
+                questions.push('哪些细分市场值得关注？');
+                questions.push('消费者购车偏好有哪些变化？');
+            } else {
+                questions.push('该品牌的销量表现如何？');
+                questions.push('竞品有哪些差异化策略？');
+                questions.push('市场机会和风险是什么？');
+            }
+
+            return questions;
+        }
+
+        // 页面加载完成后检查服务状态
         window.onload = async function() {
             try {
                 const response = await fetch(`${API_BASE}/health`);
-                if (response.ok) {
-                    updateStatus('服务已连接 ✓', 'success');
+                if (!response.ok) {
+                    console.log('服务未连接');
                 }
             } catch (e) {
-                updateStatus('服务未连接，请确保后端已启动', 'error');
+                console.log('服务未启动，请确保后端已运行');
             }
         };
     </script>
