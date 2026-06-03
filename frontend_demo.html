@@ -79,14 +79,11 @@
             @apply bg-blue-50/50;
         }
 
-        .report-card {
-            @apply bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm;
+        .report-section {
+            @apply bg-white rounded-xl border border-gray-200 overflow-hidden mb-4 shadow-sm;
         }
-        .report-header {
-            @apply px-6 py-5 bg-gradient-to-r from-primary to-secondary text-white;
-        }
-        .report-content {
-            @apply p-6 max-h-[500px] overflow-y-auto scrollbar-hide;
+        .report-section-header {
+            @apply px-5 py-4 bg-gradient-to-r from-primary to-secondary text-white;
         }
 
         .placeholder {
@@ -94,6 +91,27 @@
         }
         .placeholder-icon {
             @apply text-6xl mb-4 opacity-50;
+        }
+
+        /* 打字机光标动画 */
+        .typing-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.2em;
+            background: #165DFF;
+            margin-left: 2px;
+            animation: blink 0.8s infinite;
+            vertical-align: middle;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* 流式输出文字容器 */
+        .streaming-text {
+            white-space: pre-wrap;
+            word-break: break-word;
         }
     </style>
 </head>
@@ -215,6 +233,9 @@
         const API_BASE = 'http://localhost:8000';
         let isAnalyzing = false;
         let stageCards = {};
+        let reportContainer = null;
+        let streamingTextElement = null;
+        let streamingInterval = null;
 
         const steps = {
             'stage1': { name: '意图识别', index: 0, icon: '🎯' },
@@ -277,6 +298,12 @@
             });
             stageCards = {};
             updateProgress(0);
+
+            // 清除流式输出
+            if (streamingInterval) {
+                clearInterval(streamingInterval);
+                streamingInterval = null;
+            }
         }
 
         function showPlaceholder() {
@@ -316,7 +343,7 @@
                     </div>
                 </div>
                 <div class="stage-card-body">
-                    <div class="text-gray-600">${status === 'running' ? '正在分析，请稍候...' : '处理完成'}</div>
+                    <div class="text-gray-600 streaming-text">${status === 'running' ? '正在分析，请稍候<span class="typing-cursor"></span>' : '处理完成'}</div>
                 </div>
             `;
 
@@ -335,7 +362,6 @@
                 card.className = `stage-card ${status}`;
 
                 const header = card.querySelector('.stage-card-header');
-                const body = card.querySelector('.stage-card-body');
                 header.innerHTML = `
                     <div class="flex items-center gap-3">
                         <span class="text-2xl">${steps[stageId]?.icon || '📋'}</span>
@@ -352,9 +378,10 @@
 
             const body = card.querySelector('.stage-card-body');
             if (summary) {
-                body.innerHTML = `<div class="text-gray-600 leading-relaxed">${formatSummary(summary)}</div>`;
+                // 流式显示摘要
+                startStreaming(body, formatSummary(summary));
             } else if (status === 'running') {
-                body.innerHTML = `<div class="text-gray-600">正在分析，请稍候...</div>`;
+                body.innerHTML = `<div class="text-gray-600">正在分析，请稍候<span class="typing-cursor"></span></div>`;
             }
 
             const stageIndex = steps[stageId]?.index || 0;
@@ -362,6 +389,36 @@
             updateProgress(progress);
 
             document.getElementById('outputContent').scrollTop = document.getElementById('outputContent').scrollHeight;
+        }
+
+        // 流式输出函数 - 模拟打字机效果
+        function startStreaming(container, text) {
+            if (streamingInterval) {
+                clearInterval(streamingInterval);
+            }
+
+            container.innerHTML = `<div class="streaming-text"></div><span class="typing-cursor"></span>`;
+            const textElement = container.querySelector('.streaming-text');
+            let index = 0;
+
+            streamingInterval = setInterval(() => {
+                if (index < text.length) {
+                    // 每次显示几个字符，模拟流式效果
+                    const chunkSize = Math.floor(Math.random() * 3) + 1;
+                    textElement.textContent = text.substring(0, index + chunkSize);
+                    index += chunkSize;
+
+                    // 滚动到底部
+                    const outputContent = document.getElementById('outputContent');
+                    outputContent.scrollTop = outputContent.scrollHeight;
+                } else {
+                    // 完成，移除光标
+                    const cursor = container.querySelector('.typing-cursor');
+                    if (cursor) cursor.remove();
+                    clearInterval(streamingInterval);
+                    streamingInterval = null;
+                }
+            }, 30); // 每30ms显示一点
         }
 
         function formatSummary(summary) {
@@ -378,25 +435,6 @@
             return formatted;
         }
 
-        function showReport(reportMarkdown) {
-            const outputContent = document.getElementById('outputContent');
-
-            Object.values(stageCards).forEach(card => card.remove());
-
-            const html = parseMarkdown(reportMarkdown);
-
-            const reportCard = document.createElement('div');
-            reportCard.className = 'report-card';
-            reportCard.innerHTML = html;
-
-            outputContent.innerHTML = '';
-            outputContent.appendChild(reportCard);
-            outputContent.scrollTop = 0;
-
-            document.getElementById('outputBadge').classList.remove('hidden');
-            updateProgress(100);
-        }
-
         function parseMarkdown(md) {
             if (!md) return '';
 
@@ -409,18 +447,73 @@
                 .replace(/\*\*(.+?)\*\*/g, '<strong class="text-gray-900">$1</strong>')
                 .replace(/^- (.+)$/gm, '<li class="ml-4 text-gray-700">$1</li>')
                 .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 text-gray-700">$2</li>')
-                .replace(/\n\n/g, '<p class="text-gray-700 mb-3"></p>')
+                .replace(/\n\n/g, '<br><br>')
                 .replace(/\n/g, '<br>');
 
-            return `
-                <div class="report-header">
-                    <h2 class="text-xl font-bold">📊 汽车市场战略分析报告</h2>
-                    <p class="text-sm opacity-80 mt-1">实时 AI 智能分析</p>
+            return html;
+        }
+
+        // 创建报告容器（追加模式，不覆盖阶段卡片）
+        function createReportContainer() {
+            const outputContent = document.getElementById('outputContent');
+
+            const reportSection = document.createElement('div');
+            reportSection.className = 'report-section';
+            reportSection.id = 'reportSection';
+
+            reportSection.innerHTML = `
+                <div class="report-section-header">
+                    <h2 class="text-xl font-bold">📊 分析报告</h2>
+                    <p class="text-sm opacity-80 mt-1">实时生成中...</p>
                 </div>
-                <div class="report-content">
-                    <div class="text-gray-700 leading-relaxed">${html}</div>
+                <div class="p-5">
+                    <div class="streaming-text text-gray-700 leading-relaxed" id="reportText"></div>
                 </div>
             `;
+
+            outputContent.appendChild(reportSection);
+            outputContent.scrollTop = outputContent.scrollHeight;
+
+            return document.getElementById('reportText');
+        }
+
+        // 流式显示报告
+        function streamReport(markdown) {
+            const reportText = createReportContainer();
+            const plainText = stripHtml(markdown);
+
+            let index = 0;
+            const speed = 15; // 速度调整，越小越快
+
+            streamingInterval = setInterval(() => {
+                if (index < plainText.length) {
+                    const chunkSize = Math.floor(Math.random() * 5) + 2;
+                    const currentText = plainText.substring(0, index + chunkSize);
+                    index += chunkSize;
+
+                    // 实时解析并渲染 Markdown
+                    reportText.innerHTML = parseMarkdown(currentText) + '<span class="typing-cursor"></span>';
+
+                    // 滚动到底部
+                    const outputContent = document.getElementById('outputContent');
+                    outputContent.scrollTop = outputContent.scrollHeight;
+                } else {
+                    // 完成
+                    reportText.innerHTML = parseMarkdown(markdown);
+                    document.getElementById('outputBadge').classList.remove('hidden');
+                    clearInterval(streamingInterval);
+                    streamingInterval = null;
+                }
+            }, speed);
+        }
+
+        // 去除 HTML 标签，只保留纯文本用于流式显示
+        function stripHtml(html) {
+            return html
+                .replace(/<[^>]*>/g, '')
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>');
         }
 
         async function startAnalysis() {
@@ -538,7 +631,8 @@
                     if (payload.success) {
                         updateStatus('分析完成，耗时 ' + (payload.execution_time ? payload.execution_time.toFixed(1) : '?') + 's', 'success');
                         if (payload.report) {
-                            showReport(payload.report);
+                            // 流式显示报告（追加到现有内容后面）
+                            streamReport(payload.report);
                         }
                     } else {
                         updateStatus('分析失败: ' + (payload.error || '未知错误'), 'error');
