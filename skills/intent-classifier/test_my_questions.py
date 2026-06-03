@@ -8,7 +8,7 @@ from intent_classifier import IntentClassifier
 classifier = IntentClassifier()
 
 # 测试你的问题
-question = "比亚迪在20-30万纯电SUV市场的竞品分析"
+question = "比亚迪的市场战略"
 result = classifier.classify(question)
 
 # 打印完整结果

@@ -136,14 +136,18 @@ class CarAnalysisWorkflow:
             # ==================== 阶段3: 四大框架分析 ====================
             self.log("STAGE 3", "四大框架分析")
 
+            # 获取SQL和向量数据
+            sql_data = hybrid_result.get("sql_data")
+            vector_data = hybrid_result.get("vector_data")
+
             # PEST分析
             self.log("PEST", "执行PEST宏观分析")
-            pest_result = self._analyze_pest()
+            pest_result = self._analyze_pest(sql_data, vector_data)
             self.results["pest"] = pest_result
 
             # 波特五力
             self.log("PORTER", "执行波特五力分析")
-            porter_result = self._analyze_porter()
+            porter_result = self._analyze_porter(sql_data, vector_data)
             self.results["porter"] = porter_result
 
             # SWOT分析（如果识别到品牌）
@@ -151,11 +155,11 @@ class CarAnalysisWorkflow:
             brand = brands_mentioned[0] if brands_mentioned else None
             if brand:
                 self.log("SWOT", f"执行SWOT分析 ({brand})")
-                swot_result = self._analyze_swot(brand)
+                swot_result = self._analyze_swot(brand, sql_data, vector_data)
                 self.results["swot"] = swot_result
 
                 self.log("4P", f"执行4P分析 ({brand})")
-                fourp_result = self._analyze_fourp(brand)
+                fourp_result = self._analyze_fourp(brand, sql_data, vector_data)
                 self.results["fourp"] = fourp_result
             else:
                 self.log("SWOT", "未识别到具体品牌，跳过SWOT/4P")
@@ -227,11 +231,29 @@ class CarAnalysisWorkflow:
             # 调用 HybridMarketAgent.analyze()
             result = self.hybrid_agent.analyze(market_input)
 
+            # 提取SQL数据结构（用于战略分析）
+            sql_data = None
+            if result.competitors:
+                # 从competitors数据构建sql_data格式
+                total_sales = sum(c.sales_volume for c in result.competitors if c.sales_volume)
+                sql_data = {
+                    "success": True,
+                    "record_count": len(result.competitors),
+                    "results": [{
+                        "total_sales": total_sales,
+                        "brand_count": len(result.competitors),
+                        "model_count": len(result.competitors)
+                    }]
+                }
+
+            # 构建返回结果
             return {
                 "success": result.success,
                 "error": getattr(result, 'error', None),
                 "data_source": getattr(result, 'data_source', 'unknown'),
                 "confidence": result.confidence,
+                "sql_data": sql_data,
+                "vector_data": {"success": True, "results": []},  # 向量数据暂时为空
                 "market_overview": {
                     "scale": result.market_overview.scale if result.market_overview else None,
                     "growth_rate": result.market_overview.growth_rate if result.market_overview else None,
@@ -290,45 +312,45 @@ class CarAnalysisWorkflow:
                 "question": question
             }
 
-    def _analyze_pest(self) -> Dict[str, Any]:
+    def _analyze_pest(self, sql_data: Dict = None, vector_data: Dict = None) -> Dict[str, Any]:
         """PEST分析"""
         try:
             sys.path.insert(0, os.path.join(self.SKILLS_BASE, "automotive-strategy-analysis"))
             import strategy_analysis
-            result = strategy_analysis.pest_analysis()
+            result = strategy_analysis.pest_analysis(sql_data=sql_data, vector_data=vector_data)
             return result
         except Exception as e:
             print(f"PEST分析失败: {e}")
             return {"success": False, "error": str(e)}
 
-    def _analyze_porter(self) -> Dict[str, Any]:
+    def _analyze_porter(self, sql_data: Dict = None, vector_data: Dict = None) -> Dict[str, Any]:
         """波特五力分析"""
         try:
             sys.path.insert(0, os.path.join(self.SKILLS_BASE, "automotive-strategy-analysis"))
             import strategy_analysis
-            result = strategy_analysis.porter_analysis()
+            result = strategy_analysis.porter_analysis(sql_data=sql_data, vector_data=vector_data)
             return result
         except Exception as e:
             print(f"波特五力分析失败: {e}")
             return {"success": False, "error": str(e)}
 
-    def _analyze_swot(self, brand: str) -> Dict[str, Any]:
+    def _analyze_swot(self, brand: str, sql_data: Dict = None, vector_data: Dict = None) -> Dict[str, Any]:
         """SWOT分析"""
         try:
             sys.path.insert(0, os.path.join(self.SKILLS_BASE, "automotive-strategy-analysis"))
             import strategy_analysis
-            result = strategy_analysis.swot_analysis(brand)
+            result = strategy_analysis.swot_analysis(brand, sql_data=sql_data, vector_data=vector_data)
             return result
         except Exception as e:
             print(f"SWOT分析失败: {e}")
             return {"success": False, "error": str(e)}
 
-    def _analyze_fourp(self, brand: str) -> Dict[str, Any]:
+    def _analyze_fourp(self, brand: str, sql_data: Dict = None, vector_data: Dict = None) -> Dict[str, Any]:
         """4P分析"""
         try:
             sys.path.insert(0, os.path.join(self.SKILLS_BASE, "automotive-strategy-analysis"))
             import strategy_analysis
-            result = strategy_analysis.fourp_analysis(brand)
+            result = strategy_analysis.fourp_analysis(brand, sql_data=sql_data, vector_data=vector_data)
             return result
         except Exception as e:
             print(f"4P分析失败: {e}")

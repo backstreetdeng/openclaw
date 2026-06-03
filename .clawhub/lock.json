@@ -8,6 +8,10 @@
     "skill-vetter": {
       "version": "1.0.0",
       "installedAt": 1779794905943
+    },
+    "agent-browser-clawdbot": {
+      "version": "0.1.0",
+      "installedAt": 1780451598198
     }
   }
 }

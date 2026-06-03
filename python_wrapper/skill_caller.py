@@ -158,6 +158,29 @@ class SkillCaller:
             {"brand": brand, "segment": segment, "sql_data": sql_data, "vector_data": vector_data}
         )
 
+    async def brand_analysis(self, brand: str, sql_data: Dict = None, vector_data: Dict = None) -> Dict[str, Any]:
+        """
+        Brand analysis - analyzes brand market position and competitive advantages
+        """
+        # 构建分析数据
+        analysis_data = {
+            "brand": brand,
+            "sql_data": sql_data,
+            "vector_data": vector_data
+        }
+
+        # 调用 automotive-strategy-analysis skill
+        # 使用 comprehensive 分析模式
+        return await self.call(
+            "automotive-strategy-analysis",
+            "comprehensive",
+            {
+                "brand": brand,
+                "sql_data": sql_data,
+                "vector_data": vector_data
+            }
+        )
+
     async def generate_report(
         self,
         question: str,
@@ -166,6 +189,7 @@ class SkillCaller:
         porter_result: Dict = None,
         swot_result: Dict = None,
         fourp_result: Dict = None,
+        brand_result: Dict = None,
         vector_results: list = None,
         sql_results: list = None
     ) -> Dict[str, Any]:
@@ -181,6 +205,7 @@ class SkillCaller:
                 porter_result=porter_result,
                 swot_result=swot_result,
                 fourp_result=fourp_result,
+                brand_result=brand_result,
                 vector_results=vector_results,
                 sql_results=sql_results
             )

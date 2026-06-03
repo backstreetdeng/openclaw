@@ -33,6 +33,7 @@ class WorkflowResult:
     porter_result: Dict = None
     swot_result: Dict = None
     fourp_result: Dict = None
+    brand_result: Dict = None
     report: Dict = None
 
     # Error info
@@ -52,6 +53,7 @@ class WorkflowResult:
             "porter_result": self.porter_result,
             "swot_result": self.swot_result,
             "fourp_result": self.fourp_result,
+            "brand_result": self.brand_result,
             "report": self.report,
             "error": self.error,
             "stage_errors": self.stage_errors
@@ -233,15 +235,32 @@ class MarketAnalysisWorkflow:
             if progress_callback:
                 await progress_callback("stage4", "running", None)
 
-            # Build brand data for stage4
+            # 获取品牌名称
             brand = intent_result.get("brands_mentioned", [None])[0] if intent_result.get("brands_mentioned") else None
-            ranking = sql_data.get("results", [])[:10] if sql_data and sql_data.get("success") else []
-            brand_data = {"brand": brand, "ranking": ranking}
+
+            # 调用品牌分析skill
+            brand_result = None
+            if brand:
+                try:
+                    brand_result = await self.caller.brand_analysis(
+                        brand=brand,
+                        sql_data=sql_data,
+                        vector_data=vector_data
+                    )
+                except Exception as e:
+                    self.stage_errors["stage4"] = str(e)
+                    brand_result = {"success": False, "error": str(e)}
+
+            # 生成品牌分析摘要
+            if brand_result and brand_result.get("success"):
+                brand_summary = brand_result.get("summary", f"品牌 {brand} 分析完成")
+            else:
+                brand_summary = f"品牌 {brand or '未知'} 分析完成"
 
             if progress_callback:
                 await progress_callback("stage4", "done", {
-                    "data": brand_data,
-                    "summary": f"品牌分析：{brand} ({len(ranking)}个竞品)"
+                    "data": brand_result,
+                    "summary": brand_summary
                 })
 
             # Stage 5: Report generation
@@ -250,7 +269,7 @@ class MarketAnalysisWorkflow:
 
             report = await self._stage5_report(
                 intent_result, vector_data, sql_data,
-                pest_result, porter_result, swot_result, fourp_result
+                pest_result, porter_result, swot_result, fourp_result, brand_result
             )
 
             if progress_callback:
@@ -270,6 +289,7 @@ class MarketAnalysisWorkflow:
                 porter_result=porter_result,
                 swot_result=swot_result,
                 fourp_result=fourp_result,
+                brand_result=brand_result,
                 report=report,
                 stage_errors=self.stage_errors
             )
@@ -403,7 +423,8 @@ class MarketAnalysisWorkflow:
         pest_result: Dict,
         porter_result: Dict,
         swot_result: Dict,
-        fourp_result: Dict
+        fourp_result: Dict,
+        brand_result: Dict = None
     ) -> Dict[str, Any]:
         """Stage 5: Report generation"""
         try:
@@ -414,6 +435,7 @@ class MarketAnalysisWorkflow:
                 porter_result=porter_result,
                 swot_result=swot_result,
                 fourp_result=fourp_result,
+                brand_result=brand_result,
                 vector_results=vector_data.get("results", []),
                 sql_results=sql_data.get("results", [])
             )
