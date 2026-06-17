@@ -67,3 +67,18 @@ Running RAG/vector tools with the default system Python loads Pydantic 1.10.26 a
 ### Suggested Action
 Pin all market-agent runtime commands, API server launches, and tests to `E:\AI\data\envs\car_agent_env\Scripts\python.exe`, or align the default Python environment with `python_wrapper/requirements.txt` (`pydantic>=2.0.0`).
 ---
+
+## [ERR-20260617-003] PowerShell Test-Path with Git quoted paths
+**Logged**: 2026-06-17T15:48:00+08:00
+**Priority**: low
+**Status**: resolved
+
+### Summary
+While auditing untracked files, piping `git ls-files --others --exclude-standard` into `Test-Path` failed on Git-quoted paths containing escaped non-ASCII bytes.
+
+### Details
+PowerShell reported `Illegal characters in path` for quoted Git output such as filenames with octal escape sequences. The failure did not affect commits, but it made the file-size audit noisy.
+
+### Suggested Action
+For Git path audits in PowerShell, use `git -c core.quotepath=false ...` or parse NUL-delimited output instead of passing quoted Git path strings directly to filesystem cmdlets.
+---
