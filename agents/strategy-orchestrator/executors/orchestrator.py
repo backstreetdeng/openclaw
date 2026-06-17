@@ -332,13 +332,19 @@ class StrategyOrchestrator:
             # 调用工具
             result = tool_func(param, task, state)
             
+            # 从结果中提取 evidence
+            evidence = None
+            if isinstance(result, dict) and 'evidence' in result:
+                evidence = result['evidence']
+            
             return ToolResult(
                 tool_name=tool_name,
                 success=True,
                 result=result,
+                evidence=evidence,
                 execution_time=time.time() - start_time
             )
-        
+
         except Exception as e:
             # 捕获异常，返回失败
             failure_type = detect_failure_type(e, tool_name)
