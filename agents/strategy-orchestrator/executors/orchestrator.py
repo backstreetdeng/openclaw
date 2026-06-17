@@ -126,6 +126,13 @@ class StrategyOrchestrator:
         self._tools: Dict[str, Callable] = {}
         self._register_default_tools()
     
+    @property
+    def tool_registry(self):
+        return self
+    
+    def register_tool(self, name, tool_func):
+        self._tools[name] = tool_func
+    
     def _register_default_tools(self):
         """注册默认工具"""
         # 这里注册实际可用的工具
