@@ -184,6 +184,19 @@ def build_seven_step_report(
     reflection = reflection or {}
     quality_summary = quality_summary or {}
     missing_or_uncertain = missing_or_uncertain or []
+    if _requires_market_competition_report(analysis_plan):
+        return _build_market_competition_report(
+            task_id=task_id,
+            question=question,
+            analysis_plan=analysis_plan,
+            evidence_store=evidence_store,
+            confidence=confidence,
+            confidence_details=confidence_details,
+            reflection=reflection,
+            quality_summary=quality_summary,
+            missing_or_uncertain=missing_or_uncertain,
+        )
+
     cards = insight_cards or build_insight_cards(
         analysis_plan=analysis_plan,
         evidence_store=evidence_store,
@@ -285,6 +298,113 @@ def build_seven_step_report(
     return "\n".join(str(line) for line in lines if line is not None)
 
 
+def _requires_market_competition_report(analysis_plan: Dict[str, Any]) -> bool:
+    strategy = analysis_plan.get("answer_strategy") or {}
+    return (
+        strategy.get("subject_kind") == "market"
+        and not strategy.get("is_target_specific")
+        and any("SOM" in item or "目标对象" in item for item in strategy.get("must_not_use", []))
+    )
+
+
+def _build_market_competition_report(
+    *,
+    task_id: str,
+    question: str,
+    analysis_plan: Dict[str, Any],
+    evidence_store: Dict[str, Any],
+    confidence: float,
+    confidence_details: Dict[str, Any],
+    reflection: Dict[str, Any],
+    quality_summary: Dict[str, Any],
+    missing_or_uncertain: List[str],
+) -> str:
+    metrics = _extract_structured_metrics(evidence_store)
+    market_scope = analysis_plan.get("market_scope") or "未指定市场"
+    time_range = analysis_plan.get("time_range") or "未指定时间"
+    strategy = analysis_plan.get("answer_strategy") or {}
+    competitors = metrics.get("top_competitors") or []
+    uncertainty = list(missing_or_uncertain or [])
+    if not evidence_store.get("W"):
+        uncertainty.append("缺少外部网页/实时公开来源补证，政策、渠道、价格战和舆情判断需要降级")
+    if len(evidence_store.get("R", []) or []) < 2:
+        uncertainty.append("RAG文档来源偏少，行业背景和战略解释不足")
+    if not competitors:
+        uncertainty.append("缺少可用Top品牌/企业份额表，无法稳定判断竞争梯队")
+
+    lines = [
+        f"# 市场竞争格局分析报告：{question}",
+        "",
+        f"**任务ID**: {task_id}",
+        f"**分析对象**: {market_scope}",
+        f"**时间口径**: {_period_label(metrics, time_range)}",
+        f"**总体置信度**: {_fmt_pct(confidence * 100 if confidence <= 1 else confidence)}",
+        f"**证据概况**: D={len(evidence_store.get('D', []))}, R={len(evidence_store.get('R', []))}, W={len(evidence_store.get('W', []))}, A={len(evidence_store.get('A', []))}",
+        f"**答案策略来源**: {strategy.get('source', 'unknown')}；目标={strategy.get('question_goal', '未写入')}",
+        "",
+        "> 本报告按“市场竞争结构”问题回答，不使用目标对象/SOM模板。企业名称可能仍是数据库企业口径，未完成集团品牌归并时需人工复核。",
+        "",
+        "## 1. 口径与数据窗口",
+        "",
+        _bullet("原始问题", question),
+        _bullet("市场范围", market_scope),
+        _bullet("数据窗口", _period_label(metrics, time_range)),
+        _bullet("结构化数据口径", "PostgreSQL销量库 targeted_sql_pack；品牌/企业口径以库内字段为准"),
+        _bullet("必须回答", "；".join(strategy.get("must_answer") or [])),
+        "",
+        "## 2. 市场规模与走势",
+        "",
+        _bullet("累计销量", f"{_fmt_num(metrics.get('market_sales'))} 辆，证据 {_fmt_ids(_ids(evidence_store, 'D', ['market_overview']))}"),
+        _bullet("参与企业/品牌数", f"{_fmt_num(metrics.get('brand_count'))} 个；车型数 {_fmt_num(metrics.get('model_count'))} 个"),
+        _bullet("最近月变化", _trend_sentence(metrics, evidence_store)),
+        "",
+        "## 3. Top品牌/企业份额",
+        "",
+    ]
+
+    if competitors:
+        lines.extend(_competitor_table(competitors))
+    else:
+        lines.append("- 证据不足：当前没有可用竞品份额行。")
+
+    lines.extend(
+        [
+            "",
+            "## 4. 集中度与竞争梯队",
+            "",
+            _bullet("集中度", _concentration_sentence(competitors)),
+            _bullet("头部梯队", _tier_sentence(competitors, 0, 3)),
+            _bullet("腰部梯队", _tier_sentence(competitors, 3, 8)),
+            _bullet("长尾格局", _tail_sentence(metrics, competitors)),
+            "",
+            "## 5. 格局判断",
+            "",
+            _bullet("核心判断", _market_landscape_judgement(metrics, competitors)),
+            _bullet("竞争压力", "头部企业份额、价格战和新品节奏是短期格局变化的主要观测项；外部证据不足时不做确定性渠道/舆情判断。"),
+            _bullet("口径风险", "当前品牌可能按企业名称拆分，如同一集团/品牌存在多主体，需要做集团品牌归并后再用于正式决策。"),
+            "",
+            "## 6. 证据缺口与下一步",
+            "",
+        ]
+    )
+    for item in uncertainty[:8]:
+        lines.append(f"- {item}")
+    if not uncertainty:
+        lines.append("- 暂无显式缺口。")
+
+    lines.extend(
+        [
+            "",
+            "## 7. 置信度与质量门禁",
+            "",
+            _bullet("置信度细项", _confidence_sentence(confidence_details)),
+            _bullet("质量门禁", _quality_label(quality_summary)),
+            _bullet("反思状态", _reflection_sentence(reflection)),
+        ]
+    )
+    return "\n".join(str(line) for line in lines if line is not None)
+
+
 def _extract_structured_metrics(evidence_store: Dict[str, Any]) -> Dict[str, Any]:
     metrics: Dict[str, Any] = {}
     competitors: List[Dict[str, Any]] = []
@@ -322,7 +442,7 @@ def _extract_structured_metrics(evidence_store: Dict[str, Any]) -> Dict[str, Any
     models.sort(key=lambda row: _num(row.get("sales")) or 0, reverse=True)
     trends.sort(key=lambda row: str(row.get("month") or ""))
     metrics["leader"] = competitors[0] if competitors else {}
-    metrics["top_competitors"] = competitors[:5]
+    metrics["top_competitors"] = competitors[:12]
     metrics["top_model"] = models[0] if models else {}
     metrics["models"] = models[:5]
     metrics["power_mix"] = power_mix[:5]
@@ -412,6 +532,88 @@ def _bullet(label: str, value: Any) -> str:
     return f"- **{label}**: {value if value not in (None, '') else '未提供'}"
 
 
+def _period_label(metrics: Dict[str, Any], fallback: str) -> str:
+    start = metrics.get("period_start")
+    end = metrics.get("period_end")
+    if start and end:
+        return f"{start}-{end}（库内可用窗口；用户口径：{fallback}）"
+    return fallback
+
+
+def _competitor_table(competitors: List[Dict[str, Any]]) -> List[str]:
+    lines = [
+        "| 排名 | 品牌/企业 | 销量 | 份额 | 车型数 |",
+        "|---:|---|---:|---:|---:|",
+    ]
+    for idx, row in enumerate(competitors[:10], 1):
+        lines.append(
+            "| {} | {} | {} | {} | {} |".format(
+                idx,
+                row.get("brand") or row.get("maker") or "未知",
+                _fmt_num(row.get("sales")),
+                _fmt_pct(row.get("share_pct")),
+                _fmt_num(row.get("model_count")),
+            )
+        )
+    return lines
+
+
+def _concentration_sentence(competitors: List[Dict[str, Any]]) -> str:
+    if not competitors:
+        return "证据不足"
+
+    def share_sum(limit: int) -> Optional[float]:
+        values = [_num(row.get("share_pct")) for row in competitors[:limit]]
+        values = [value for value in values if value is not None]
+        if not values:
+            return None
+        return round(sum(values), 2)
+
+    return "CR3={}，CR5={}，CR10={}".format(
+        _fmt_pct(share_sum(3)),
+        _fmt_pct(share_sum(5)),
+        _fmt_pct(share_sum(10)),
+    )
+
+
+def _tier_sentence(competitors: List[Dict[str, Any]], start: int, end: int) -> str:
+    rows = competitors[start:end]
+    if not rows:
+        return "证据不足"
+    labels = [
+        f"{row.get('brand') or row.get('maker') or '未知'}({_fmt_pct(row.get('share_pct'))})"
+        for row in rows
+    ]
+    return "、".join(labels)
+
+
+def _tail_sentence(metrics: Dict[str, Any], competitors: List[Dict[str, Any]]) -> str:
+    total = _num(metrics.get("brand_count"))
+    if total is None or not competitors:
+        return "证据不足"
+    tail_count = max(0, int(total) - len(competitors[:10]))
+    return f"库内共有约{_fmt_num(total)}个品牌/企业，Top10之外仍有约{tail_count}个主体，长尾竞争和局部细分机会需要继续拆分价格带/级别验证。"
+
+
+def _market_landscape_judgement(metrics: Dict[str, Any], competitors: List[Dict[str, Any]]) -> str:
+    if not competitors:
+        return "当前缺少竞品份额证据，不能形成竞争格局判断。"
+    leader = competitors[0]
+    cr3_values = [_num(row.get("share_pct")) for row in competitors[:3]]
+    cr3_values = [value for value in cr3_values if value is not None]
+    cr3 = sum(cr3_values) if cr3_values else None
+    if cr3 is not None and cr3 >= 45:
+        structure = "头部集中度较高"
+    elif cr3 is not None and cr3 >= 30:
+        structure = "头部有优势但竞争仍分散"
+    else:
+        structure = "竞争较分散"
+    return (
+        f"{structure}；当前第一名为{leader.get('brand') or '未知'}，份额约{_fmt_pct(leader.get('share_pct'))}。"
+        "正式战略判断还需要补齐品牌集团归并、价格带和动力类型拆分。"
+    )
+
+
 def _trend_sentence(metrics: Dict[str, Any], evidence_store: Dict[str, Any]) -> str:
     trends = metrics.get("trends") or []
     if not trends:
@@ -471,9 +673,9 @@ def _confidence_sentence(details: Dict[str, Any]) -> str:
 def _quality_label(summary: Optional[Dict[str, Any]]) -> str:
     if not summary:
         return "质量门禁尚未写入报告上下文"
-    passed = summary.get("passed")
+    passed = summary.get("quality_passed", summary.get("passed"))
     failed = summary.get("failed_checks")
-    return f"passed={passed}, failed_checks={failed}"
+    return f"quality_passed={passed}, failed_checks={failed}"
 
 
 def _reflection_sentence(reflection: Dict[str, Any]) -> str:

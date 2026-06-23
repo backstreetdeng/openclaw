@@ -35,6 +35,11 @@ class P1AnalysisPlanTest(unittest.TestCase):
         self.assertEqual(plan.month_count, 12)
         self.assertIn("2026年", plan.rag_query)
         self.assertIn("新能源乘用车", plan.market_scope)
+        self.assertFalse(plan.answer_strategy["is_target_specific"])
+        self.assertEqual(plan.answer_strategy["subject_kind"], "market")
+        self.assertIn("SOM/目标销量模板", plan.answer_strategy["must_not_use"])
+        self.assertIn("CR3/CR5/CR10集中度", plan.required_data_fields)
+        self.assertNotIn("目标品牌或车型/SOM", plan.required_data_fields)
 
     def test_explicit_year_maps_to_ytd_sql_window(self) -> None:
         self.assertEqual(

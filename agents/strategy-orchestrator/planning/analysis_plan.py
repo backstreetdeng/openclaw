@@ -41,6 +41,7 @@ class AnalysisPlan:
     power_type: Optional[str] = None
     assumptions: List[str] = field(default_factory=list)
     required_data_fields: List[str] = field(default_factory=list)
+    answer_strategy: Dict[str, Any] = field(default_factory=dict)
     rag_query: str = ""
     tavily_query: str = ""
 
@@ -62,19 +63,8 @@ def build_analysis_plan(task: Any) -> AnalysisPlan:
     power_type = _infer_power_type(raw_query)
     aliases = _brand_aliases(brand)
 
-    required_fields = [
-        "总体市场规模/TAM",
-        "目标细分市场/SAM",
-        "目标品牌或车型/SOM",
-        "月度趋势与环比",
-        "同比变化",
-        "车型贡献",
-        "价格带",
-        "动力类型",
-        "竞品份额",
-        "RAG业务文档证据",
-        "Tavily外部实时证据",
-    ]
+    answer_strategy = _build_answer_strategy(raw_query, brand, market_scope, time_range)
+    required_fields = _required_fields_for_strategy(answer_strategy)
     assumptions = [
         "若用户未显式指定地域，默认以中国乘用车市场为核心范围。",
         "品牌、时间、市场范围必须贯穿 SQL/RAG/Tavily/分析框架。",
@@ -92,6 +82,7 @@ def build_analysis_plan(task: Any) -> AnalysisPlan:
         power_type=power_type,
         assumptions=assumptions,
         required_data_fields=required_fields,
+        answer_strategy=answer_strategy,
         rag_query=_build_rag_query(raw_query, brand, time_range, market_scope),
         tavily_query=_build_tavily_query(raw_query, brand, time_range, market_scope),
     )
@@ -104,9 +95,32 @@ def _infer_brand(query: str, entities: List[str]) -> Optional[str]:
             if any(alias and alias in str(probe) for alias in aliases):
                 return brand
     for entity in entities:
-        if entity:
+        if entity and not _is_market_scope_entity(entity):
             return entity
     return None
+
+
+def _is_market_scope_entity(entity: str) -> bool:
+    text = str(entity or "")
+    if not text:
+        return True
+    if re.search(r"\d{1,3}\s*[-~到至]\s*\d{1,3}\s*万", text):
+        return True
+    market_tokens = [
+        "乘用车",
+        "新能源",
+        "SUV",
+        "suv",
+        "市场",
+        "价格带",
+        "纯电",
+        "插混",
+        "增程",
+        "中国",
+        "海外",
+        "出口",
+    ]
+    return any(token in text for token in market_tokens)
 
 
 def _brand_aliases(brand: Optional[str]) -> List[str]:
@@ -181,6 +195,105 @@ def _infer_power_type(query: str) -> Optional[str]:
     if "新能源" in query:
         return "新能源"
     return None
+
+
+def _build_answer_strategy(
+    query: str,
+    brand: Optional[str],
+    market_scope: str,
+    time_range: str,
+) -> Dict[str, Any]:
+    """Build the question-answering contract for downstream report generation.
+
+    This is the place where an LLM should eventually return the answer strategy:
+    what the user is asking to decide, which sections are mandatory, and which
+    report patterns are invalid. The local logic below is only a bounded
+    semantic fallback so the orchestrator does not regress to one-keyword,
+    one-template routing when the external LLM is unavailable.
+    """
+    text = query or ""
+    asks_competition_structure = any(
+        token in text
+        for token in [
+            "竞争格局",
+            "市场格局",
+            "竞争态势",
+            "份额格局",
+            "品牌格局",
+            "竞争版图",
+        ]
+    )
+    asks_target_strategy = bool(brand) or any(
+        token in text
+        for token in ["进入", "机会", "策略", "对标", "竞品", "品牌分析", "车型分析"]
+    )
+
+    if asks_competition_structure and not brand:
+        return {
+            "source": "semantic_fallback",
+            "llm_expected": True,
+            "question_goal": f"解释{time_range}{market_scope}的竞争结构、头部集中度、梯队和变化风险",
+            "subject_kind": "market",
+            "is_target_specific": False,
+            "must_answer": [
+                "数据窗口和口径",
+                "市场规模与趋势",
+                "Top品牌/企业份额",
+                "CR3/CR5/CR10集中度",
+                "头部/腰部/长尾竞争梯队",
+                "格局变化、风险和证据缺口",
+            ],
+            "must_not_use": [
+                "目标对象占位",
+                "SOM/目标销量模板",
+                "单一品牌商业模式模板",
+            ],
+        }
+
+    return {
+        "source": "semantic_fallback",
+        "llm_expected": True,
+        "question_goal": f"围绕{brand or market_scope}回答市场机会、竞争压力和战略动作",
+        "subject_kind": "target" if asks_target_strategy else "market",
+        "is_target_specific": bool(brand),
+        "must_answer": [
+            "问题范围",
+            "TAM/SAM",
+            "目标表现/SOM" if brand else "竞争格局",
+            "竞品矩阵",
+            "机会与风险",
+            "下一步行动",
+        ],
+        "must_not_use": [],
+    }
+
+
+def _required_fields_for_strategy(strategy: Dict[str, Any]) -> List[str]:
+    if not strategy.get("is_target_specific") and strategy.get("subject_kind") == "market":
+        return [
+            "总体市场规模",
+            "月度趋势与环比",
+            "同比变化",
+            "Top品牌/企业份额",
+            "CR3/CR5/CR10集中度",
+            "竞争梯队",
+            "RAG业务文档证据",
+            "Tavily外部实时证据",
+        ]
+
+    return [
+        "总体市场规模/TAM",
+        "目标细分市场/SAM",
+        "目标品牌或车型/SOM",
+        "月度趋势与环比",
+        "同比变化",
+        "车型贡献",
+        "价格带",
+        "动力类型",
+        "竞品份额",
+        "RAG业务文档证据",
+        "Tavily外部实时证据",
+    ]
 
 
 def _build_rag_query(query: str, brand: Optional[str], time_range: str, market_scope: str) -> str:

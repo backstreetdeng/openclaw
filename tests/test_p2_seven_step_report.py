@@ -17,6 +17,7 @@ from evidence.evidence_ledger import Evidence  # noqa: E402
 from executors.orchestrator import ReactState, StrategyOrchestrator  # noqa: E402
 from planning.analysis_plan import build_analysis_plan  # noqa: E402
 from protocols.task_protocol import create_task_from_user_query  # noqa: E402
+from reporting.seven_step_report import build_seven_step_report  # noqa: E402
 from tools.targeted_sql_pack import build_targeted_sql_evidences  # noqa: E402
 
 
@@ -250,6 +251,63 @@ class P2SevenStepReportTest(unittest.TestCase):
         self.assertEqual(generated["report"], generated["seven_step_report"])
         self.assertIn("七步法业务战略分析报告", generated["seven_step_report"])
         self.assertTrue(generated["insight_cards"])
+
+    def test_market_competition_question_does_not_use_target_som_template(self) -> None:
+        task = create_task_from_user_query(
+            "分析 2026 年中国新能源乘用车市场竞争格局",
+            time_range="最近12个月",
+            entities=["新能源乘用车"],
+        )
+        plan = build_analysis_plan(task).to_dict()
+        evidence_store = {
+            "D": [
+                {
+                    "id": "D1",
+                    "claim": "targeted_sql_pack/market_overview: market base",
+                    "content": 'block=market_overview; sample=[{"total_sales":868726,"brand_count":153,"model_count":426,"period_start":202601,"period_end":202602}]',
+                    "data_caliber": "targeted_sql_pack; period=202601 - 202602",
+                },
+                {
+                    "id": "D2",
+                    "claim": "targeted_sql_pack/monthly_trend: monthly trend",
+                    "content": 'block=monthly_trend; sample=[{"month":202601,"sales":416000,"mom_pct":-3.2},{"month":202602,"sales":452726,"mom_pct":8.8}]',
+                    "data_caliber": "targeted_sql_pack; period=202601 - 202602",
+                },
+                {
+                    "id": "D3",
+                    "claim": "targeted_sql_pack/competitor_share: competitor share",
+                    "content": 'block=competitor_share; sample=[{"brand":"比亚迪汽车工业有限公司","sales":142643,"share_pct":16.42,"model_count":46},{"brand":"浙江吉利汽车有限公司","sales":64192,"share_pct":7.39,"model_count":41},{"brand":"特斯拉汽车有限公司","sales":58610,"share_pct":6.75,"model_count":2},{"brand":"理想汽车","sales":42000,"share_pct":4.83,"model_count":5},{"brand":"重庆长安汽车股份有限公司","sales":39000,"share_pct":4.49,"model_count":28}]',
+                    "data_caliber": "targeted_sql_pack; period=202601 - 202602",
+                },
+            ],
+            "R": [{"id": "R1", "claim": "RAG行业报告", "content": "2026年新能源竞争加剧"}],
+            "W": [],
+            "A": [],
+        }
+
+        report = build_seven_step_report(
+            task_id=task.task_id,
+            question=task.user_intent.raw_query,
+            analysis_plan=plan,
+            evidence_store=evidence_store,
+            confidence=0.749,
+            confidence_details={
+                "data_coverage_factor": 0.868,
+                "rag_coverage_factor": 0.539,
+                "source_credibility_factor": 0.793,
+                "conflict_factor": 1.0,
+                "confidence": 0.749,
+            },
+            quality_summary={"quality_passed": False, "failed_checks": [{"check": "web_evidence_missing"}]},
+        )
+
+        self.assertIn("市场竞争格局分析报告", report)
+        self.assertIn("CR3=", report)
+        self.assertIn("Top品牌/企业份额", report)
+        self.assertIn("不使用目标对象/SOM模板", report)
+        self.assertNotIn("目标销量约", report)
+        self.assertNotIn("第二步：市场规模估算（TAM/SAM/SOM）", report)
+        self.assertNotIn("- **目标对象**", report)
 
 
 if __name__ == "__main__":
