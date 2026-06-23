@@ -181,12 +181,24 @@ class P3ReportQualityTest(unittest.TestCase):
                 data_caliber="DB", metrics=["sales"],
                 coverage_dimensions=["t"], coverage_score=0.9,
                 source_credibility=0.88, confidence=0.86)}
+        def fake_rag(p, t, s):
+            return {"evidence": Evidence(source="rag", tool="fake_vector_retriever",
+                claim="RAG BYD strategic background",
+                content="industry report shows BYD strengthening cost advantage",
+                time_range="user " + t.user_intent.time_range,
+                data_caliber="vector retrieval caliber",
+                coverage_dimensions=["industry report","trend"],
+                coverage_score=0.7, source_credibility=0.72, confidence=0.72,
+                source_url="https://example.com/byd-report.pdf",
+                source_date="2026-06-01",
+                source_grade="A")}
         def fake_framework(p, t, s):
             return {"evidence": Evidence(source="analysis-framework", tool=p, claim="fw",
                 content="done", time_range="last 12m",
                 data_caliber="inf", coverage_dimensions=["inf"],
                 coverage_score=0.6, source_credibility=0.60, confidence=0.65)}
         orchestrator.register_tool("nl2sql-pg", fake_nl2sql)
+        orchestrator.register_tool("rag", fake_rag)
         orchestrator.register_tool("analysis-framework", fake_framework)
         task = create_task_from_user_query(
             "BYD near 6 months market strategy",

@@ -61,6 +61,10 @@ try:
         AnalysisPhase,
         PhaseTracker,
     )
+    from .reporting.seven_step_report import (
+        build_insight_cards,
+        build_seven_step_report,
+    )
     from .tools.targeted_sql_pack import (
         REQUIRED_TARGETED_SQL_BLOCKS,
         build_targeted_sql_evidences,
@@ -109,6 +113,10 @@ except ImportError as e:
     from planning.seven_step_phases import (
         AnalysisPhase,
         PhaseTracker,
+    )
+    from reporting.seven_step_report import (
+        build_insight_cards,
+        build_seven_step_report,
     )
     from tools.targeted_sql_pack import (
         REQUIRED_TARGETED_SQL_BLOCKS,
@@ -934,6 +942,7 @@ class StrategyOrchestrator:
         # 从证据账本生成结果
         report = self.evidence_ledger.generate_report()
         analysis_plan = state.analysis_plan or build_analysis_plan(task)
+        analysis_plan_dict = analysis_plan.to_dict()
         evidence_store = self._build_evidence_store(report)
         
         # 构建 facts 和 inferences
@@ -991,12 +1000,32 @@ class StrategyOrchestrator:
 
         if not state.is_complete:
             missing_or_uncertain.append("证据可能不够完整")
+
+        insight_cards = build_insight_cards(
+            analysis_plan=analysis_plan_dict,
+            evidence_store=evidence_store,
+            confidence=overall_conf,
+            reflection=state.reflection,
+            quality_summary={},
+        )
+        seven_step_report = build_seven_step_report(
+            task_id=task.task_id,
+            question=task.user_intent.raw_query if task.user_intent else "",
+            analysis_plan=analysis_plan_dict,
+            evidence_store=evidence_store,
+            confidence=overall_conf,
+            confidence_details=conf_details,
+            insight_cards=insight_cards,
+            reflection=state.reflection,
+            quality_summary={},
+            missing_or_uncertain=missing_or_uncertain,
+        )
         
         return OrchestrationResult(
             task_id=task.task_id,
             success=state.is_complete or overall_conf >= 0.5,
             user_intent=task.user_intent.to_dict() if task.user_intent else {},
-            analysis_plan=analysis_plan.to_dict(),
+            analysis_plan=analysis_plan_dict,
             answer=answer,
             facts=facts,
             inferences=inferences,
@@ -1021,6 +1050,8 @@ class StrategyOrchestrator:
             ],
             evidence_ledger=report,
             evidence_store=evidence_store,
+            seven_step_report=seven_step_report,
+            insight_cards=insight_cards,
             reflection=state.reflection,
             replan_history=state.replan_history,
             missing_or_uncertain=missing_or_uncertain,
@@ -1053,6 +1084,25 @@ class StrategyOrchestrator:
             "passed_checks": sum(1 for item in checks if item.passed),
             "failed_checks": failed_checks,
         }
+        result.insight_cards = build_insight_cards(
+            analysis_plan=result.analysis_plan,
+            evidence_store=result.evidence_store,
+            confidence=result.confidence,
+            reflection=result.reflection,
+            quality_summary=result.quality_summary,
+        )
+        result.seven_step_report = build_seven_step_report(
+            task_id=result.task_id,
+            question=result.user_intent.get("raw_query", ""),
+            analysis_plan=result.analysis_plan,
+            evidence_store=result.evidence_store,
+            confidence=result.confidence,
+            confidence_details=result.confidence_details,
+            insight_cards=result.insight_cards,
+            reflection=result.reflection,
+            quality_summary=result.quality_summary,
+            missing_or_uncertain=result.missing_or_uncertain,
+        )
         
         if not passed:
             logger.warning("Quality gate not passed")
@@ -1291,8 +1341,22 @@ class StrategyOrchestrator:
     def _tool_report_generate(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
         """报告生成工具"""
         report = self._generate_markdown_report(task, state)
+        report_context = self.evidence_ledger.generate_report()
+        evidence_store = self._build_evidence_store(report_context)
+        overall_conf, conf_details = self.evidence_ledger.calculate_overall_confidence()
+        analysis_plan = (state.analysis_plan or build_analysis_plan(task)).to_dict()
+        insight_cards = build_insight_cards(
+            analysis_plan=analysis_plan,
+            evidence_store=evidence_store,
+            confidence=overall_conf,
+            reflection=state.reflection,
+            quality_summary={},
+        )
         return {
             "report": report,
+            "seven_step_report": report,
+            "insight_cards": insight_cards,
+            "confidence_details": conf_details,
             "evidence": Evidence(
                 source="report-generator",
                 tool="report",
@@ -1825,41 +1889,37 @@ class StrategyOrchestrator:
         task: OrchestrationTask,
         state: ReactState
     ) -> str:
-        """生成 Markdown 报告"""
+        """生成七步法 Markdown 报告。"""
         report = self.evidence_ledger.generate_report()
-        
-        lines = [
-            f"# 市场战略分析报告",
-            f"",
-            f"**任务ID**: {task.task_id}",
-            f"**生成时间**: {datetime.now().isoformat()}",
-            f"**置信度**: {report['summary']['overall_confidence']:.0%}",
-            f"",
-            f"## 分析概要",
-            f"",
-        ]
-        
-        # 数据来源
-        lines.append("### 数据来源")
-        for source, count in report.get("by_source", {}).items():
-            if count > 0:
-                lines.append(f"- {source}: {count}条证据")
-        lines.append("")
-        
-        # 证据冲突
-        conflicts = report.get("conflicts", [])
-        if conflicts:
-            lines.append("### 证据冲突")
-            for c in conflicts:
-                lines.append(f"- [{c['severity']}] {c['conflict_type']}: {c['claim_a']} vs {c['claim_b']}")
-            lines.append("")
-        
-        # 下一步
-        lines.append("## 下一步建议")
-        for step in self._generate_next_steps(task, state):
-            lines.append(f"- {step}")
-        
-        return "\n".join(lines)
+        evidence_store = self._build_evidence_store(report)
+        overall_conf, conf_details = self.evidence_ledger.calculate_overall_confidence()
+        analysis_plan = (state.analysis_plan or build_analysis_plan(task)).to_dict()
+        insight_cards = build_insight_cards(
+            analysis_plan=analysis_plan,
+            evidence_store=evidence_store,
+            confidence=overall_conf,
+            reflection=state.reflection,
+            quality_summary={},
+        )
+        missing_or_uncertain = []
+        if report.get("conflicts"):
+            missing_or_uncertain.append(f"存在 {len(report.get('conflicts') or [])} 项证据冲突")
+        if overall_conf < 0.7:
+            missing_or_uncertain.append("总体置信度低于70%，需要补充更高质量证据后再用于决策")
+        if not state.is_complete:
+            missing_or_uncertain.append("证据可能不够完整")
+        return build_seven_step_report(
+            task_id=task.task_id,
+            question=task.user_intent.raw_query if task.user_intent else "",
+            analysis_plan=analysis_plan,
+            evidence_store=evidence_store,
+            confidence=overall_conf,
+            confidence_details=conf_details,
+            insight_cards=insight_cards,
+            reflection=state.reflection,
+            quality_summary={},
+            missing_or_uncertain=missing_or_uncertain,
+        )
 
 
 def create_orchestrator() -> StrategyOrchestrator:

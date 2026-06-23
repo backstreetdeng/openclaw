@@ -194,6 +194,8 @@ class OrchestrationResult:
     evidence_sources: List[Dict[str, Any]] = field(default_factory=list)  # 证据来源
     evidence_ledger: Dict[str, Any] = field(default_factory=dict)  # 证据账本
     evidence_store: Dict[str, Any] = field(default_factory=dict)  # D/R/W 业务证据编号
+    seven_step_report: str = ""              # 七步法业务战略报告
+    insight_cards: List[Dict[str, Any]] = field(default_factory=list)  # 业务洞察卡片
     reflection: Dict[str, Any] = field(default_factory=dict)  # ReAct 反思摘要
     replan_history: List[Dict[str, Any]] = field(default_factory=list)  # 重规划记录
     quality_passed: bool = False          # 质量门禁是否通过
