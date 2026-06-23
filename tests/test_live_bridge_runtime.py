@@ -12,7 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from python_wrapper.live_agent_server import _normalize_time_range, _react_trace  # noqa: E402
+from python_wrapper.live_agent_server import (  # noqa: E402
+    AnalyzeRequest,
+    _is_direct_response_query,
+    _normalize_time_range,
+    _run_analysis,
+    _react_trace,
+)
 from executors.orchestrator import create_orchestrator  # noqa: E402
 from evidence.evidence_ledger import Evidence  # noqa: E402
 from protocols.task_protocol import OutputFormat, TaskType, create_task_from_user_query  # noqa: E402
@@ -27,6 +33,19 @@ class LiveBridgeRuntimeTest(unittest.TestCase):
             ),
             "2026年",
         )
+
+    def test_meta_help_query_does_not_start_orchestration(self) -> None:
+        self.assertTrue(_is_direct_response_query("你能做什么？"))
+        self.assertTrue(_is_direct_response_query("你好"))
+        self.assertFalse(_is_direct_response_query("分析比亚迪最近12个月市场策略"))
+
+        result = _run_analysis(AnalyzeRequest(question="你能做什么？"))
+
+        self.assertEqual(result["analysis_type"], "direct_response")
+        self.assertEqual(result["cycles_used"], 0)
+        self.assertEqual(result["stop_reason"], "direct_response_no_orchestration")
+        self.assertIn("我能做什么", result["report"])
+        self.assertNotIn("七步法业务战略分析报告", result["report"])
 
     def test_react_trace_exposes_plan_act_reflect_quality(self) -> None:
         trace = _react_trace(

@@ -71,6 +71,92 @@ class PPTRequest(BaseModel):
     analysis_data: Optional[Dict[str, Any]] = None
 
 
+def _is_direct_response_query(question: str) -> bool:
+    """Return True for meta/help/chitchat queries that must not run market analysis."""
+    normalized = re.sub(r"\s+", "", (question or "").strip().lower())
+    if not normalized:
+        return False
+
+    analysis_markers = (
+        "分析", "研究", "评估", "预测", "判断", "对比", "竞品", "竞争", "格局",
+        "市场", "销量", "份额", "趋势", "政策", "机会", "风险", "价格", "品牌",
+        "比亚迪", "特斯拉", "吉利", "小米", "新能源", "乘用车", "suv",
+    )
+    if any(marker in normalized for marker in analysis_markers):
+        return False
+
+    direct_queries = {
+        "你好", "您好", "hi", "hello", "hey", "在吗",
+        "你是谁", "你能做什么", "你能做什么?", "你能做什么？",
+        "你可以做什么", "你会做什么", "你有什么能力", "介绍一下你自己",
+        "帮助", "help", "怎么用", "使用说明", "功能介绍",
+    }
+    if normalized in direct_queries:
+        return True
+
+    direct_patterns = (
+        "你能帮我做什么", "你可以帮我做什么", "这个页面怎么用", "这个智能体怎么用",
+        "有什么功能", "有哪些功能", "能干什么", "可以干什么",
+    )
+    return any(pattern in normalized for pattern in direct_patterns)
+
+
+def _direct_response_payload(question: str) -> Dict[str, Any]:
+    report = "\n".join(
+        [
+            "## 我能做什么",
+            "",
+            "我是汽车市场战略分析智能体，适合处理需要证据链和结构化判断的市场问题。",
+            "",
+            "我可以帮你做：",
+            "- 市场格局分析：销量、份额、集中度、头部/腰部/长尾结构。",
+            "- 竞品研究：品牌或车型对比、产品定位、价格带、动力类型和配置差异。",
+            "- 机会评估：细分市场空间、增长信号、进入窗口和主要风险。",
+            "- 政策影响：补贴、税收、出口、区域政策对市场结构的影响。",
+            "- 证据化报告：区分事实、推断和不确定性，并给出置信度。",
+            "",
+            "你可以这样问：",
+            "- `分析 2026 年中国新能源乘用车市场竞争格局`",
+            "- `对比比亚迪、特斯拉、吉利最近12个月的市场表现`",
+            "- `评估15-20万新能源SUV市场机会`",
+            "",
+            "像“你好”“你能做什么”这类问题，我会直接回答；只有明确的市场分析问题才会启动 ReAct 编排和数据检索。",
+        ]
+    )
+    return {
+        "success": True,
+        "question": question,
+        "analysis_type": "direct_response",
+        "time_range": "",
+        "entities": [],
+        "confidence": 1.0,
+        "cycles_used": 0,
+        "stop_reason": "direct_response_no_orchestration",
+        "sources": [],
+        "evidence_count": 0,
+        "facts_count": 0,
+        "inferences_count": 0,
+        "quality_passed": True,
+        "failed_quality_checks": [],
+        "missing_or_uncertain": [],
+        "errors": [],
+        "raw": {},
+        "execution_trace": [
+            {
+                "agent": "market_strategy_agent",
+                "skill": "direct-response-router",
+                "action": "answer_without_orchestration",
+                "status": "done",
+                "summary": "识别为能力介绍/闲聊问题，未启动 strategy-orchestrator、SQL、RAG 或 Web 检索。",
+            }
+        ],
+        "skill_trace": [],
+        "react_trace": [],
+        "execution_time": 0.0,
+        "report": report,
+    }
+
+
 def _jsonable(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
@@ -427,6 +513,21 @@ def _run_analysis(
 ) -> Dict[str, Any]:
     question = request.question.strip()
     started = time.time()
+    if _is_direct_response_query(question):
+        payload = _direct_response_payload(question)
+        payload["execution_time"] = round(time.time() - started, 2)
+        if event_callback:
+            event_callback(
+                {
+                    "phase": "Direct",
+                    "stage": "stage1",
+                    "status": "done",
+                    "summary": "识别为能力介绍/闲聊问题，直接回答，不启动市场分析编排。",
+                    "detail": {"route": "direct_response_no_orchestration"},
+                }
+            )
+        return payload
+
     analysis_type = request.analysis_type or _infer_analysis_type(question)
     time_range = _normalize_time_range(question, request.time_range)
     entities = _infer_entities(question)
@@ -554,6 +655,21 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
 
     async def stream() -> Iterable[str]:
         question = request.question.strip()
+        if _is_direct_response_query(question):
+            result = _direct_response_payload(question)
+            yield _sse(
+                "react",
+                {
+                    "phase": "Direct",
+                    "stage": "stage1",
+                    "status": "done",
+                    "summary": "识别为能力介绍/闲聊问题，直接回答；未启动 SQL/RAG/ReAct 市场分析。",
+                    "detail": {"route": "direct_response_no_orchestration"},
+                },
+            )
+            yield _sse("complete", result)
+            return
+
         analysis_type = request.analysis_type or _infer_analysis_type(question)
         time_range = _normalize_time_range(question, request.time_range)
         entities = _infer_entities(question)
