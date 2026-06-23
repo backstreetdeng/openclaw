@@ -21,6 +21,52 @@ SEVEN_STEP_HEADINGS = [
     "第七步：洞察报告生成",
 ]
 
+DEGRADATION_THRESHOLD = 0.7
+
+
+def _build_degradation_notice(
+    confidence,
+    confidence_details=None,
+    missing_or_uncertain=None,
+):
+    details = confidence_details or {}
+    missing = missing_or_uncertain or []
+    pct = '{:.0%}'.format(confidence)
+    lines = [
+        '',
+        '## [WARNING] 报告降级声明',
+        '',
+        '> **本报告置信度为 ' + pct + '，低于70%决策参考线。以下结论为初步判断，不构成确定性战略建议，请结合人工复核。**',
+        '',
+    ]
+    if details:
+        factors = [
+            ('数据覆盖', details.get('data_coverage_factor'), '结构化数据维度覆盖不足'),
+            ('RAG覆盖', details.get('rag_coverage_factor'), '外部文档补证不足'),
+            ('来源可信度', details.get('source_credibility_factor'), '证据来源可信度偏低'),
+            ('冲突系数', details.get('conflict_factor'), '存在证据冲突未解决'),
+        ]
+        for label, value, reason in factors:
+            if value is not None and value < 0.7:
+                lines.append('- **{}={:.0%}**: {}，建议补充该维度证据'.format(label, value, reason))
+    if missing:
+        lines.append('')
+        lines.append('**主要不确定性来源**：')
+        for item in missing[:5]:
+            lines.append('- ' + item)
+    lines.extend([
+        '',
+        '**建议下一步行动**：',
+        '1. 补充同价位竞品月度份额变化数据',
+        '2. 检索品牌/行业战略分析报告增强 RAG 证据',
+        '3. 如置信度持续低于60%，该报告仅供讨论参考，不建议直接用于战略决策',
+        '',
+    ])
+    return lines
+
+
+
+
 
 def build_insight_cards(
     *,
@@ -208,6 +254,10 @@ def build_seven_step_report(
         f"## {SEVEN_STEP_HEADINGS[6]}",
         "",
     ]
+
+    # Low-confidence degradation notice
+    if confidence < DEGRADATION_THRESHOLD:
+        lines.extend(_build_degradation_notice(confidence, confidence_details, missing_or_uncertain))
 
     for idx, card in enumerate(cards, 1):
         lines.extend(
