@@ -11,9 +11,12 @@ ReAct 循环实现：
 
 import json
 import logging
+import importlib.util
+import re
 from typing import Dict, List, Any, Optional, Callable, Tuple
 from datetime import datetime
 from dataclasses import dataclass, field
+from pathlib import Path
 
 # 导入协议和组件
 import sys
@@ -91,6 +94,7 @@ class ToolResult:
     error: str = None
     execution_time: float = 0.0
     evidence: Evidence = None
+    evidences: List[Evidence] = field(default_factory=list)
 
 
 @dataclass
@@ -222,22 +226,25 @@ class StrategyOrchestrator:
                 state.tool_results.append(tool_result)
                 
                 # 记录证据
-                if tool_result.success and tool_result.evidence:
+                evidences_to_add = list(tool_result.evidences or [])
+                if tool_result.evidence:
+                    evidences_to_add.append(tool_result.evidence)
+                for evidence in evidences_to_add:
                     self.evidence_ledger.add_evidence(
-                        source=tool_result.evidence.source,
-                        tool=tool_result.evidence.tool,
-                        claim=tool_result.evidence.claim,
-                        content=tool_result.evidence.content,
-                        time_range=tool_result.evidence.time_range,
-                        metrics=tool_result.evidence.metrics,
-                        data_caliber=tool_result.evidence.data_caliber,
-                        source_url=tool_result.evidence.source_url,
-                        source_date=tool_result.evidence.source_date,
-                        source_credibility=tool_result.evidence.source_credibility,
-                        coverage_dimensions=tool_result.evidence.coverage_dimensions,
-                        coverage_score=tool_result.evidence.coverage_score,
-                        confidence=tool_result.evidence.confidence,
-                        limitations=tool_result.evidence.limitations
+                        source=evidence.source,
+                        tool=evidence.tool,
+                        claim=evidence.claim,
+                        content=evidence.content,
+                        time_range=evidence.time_range,
+                        metrics=evidence.metrics,
+                        data_caliber=evidence.data_caliber,
+                        source_url=evidence.source_url,
+                        source_date=evidence.source_date,
+                        source_credibility=evidence.source_credibility,
+                        coverage_dimensions=evidence.coverage_dimensions,
+                        coverage_score=evidence.coverage_score,
+                        confidence=evidence.confidence,
+                        limitations=evidence.limitations
                     )
                 
                 # 记录已完成步骤
@@ -348,14 +355,18 @@ class StrategyOrchestrator:
             
             # 从结果中提取 evidence
             evidence = None
+            evidences = []
             if isinstance(result, dict) and 'evidence' in result:
                 evidence = result['evidence']
+            if isinstance(result, dict) and 'evidences' in result:
+                evidences = result.get('evidences') or []
             
             return ToolResult(
                 tool_name=tool_name,
                 success=True,
                 result=result,
                 evidence=evidence,
+                evidences=evidences,
                 execution_time=time.time() - start_time
             )
 
@@ -756,23 +767,268 @@ class StrategyOrchestrator:
         }
     
     def _tool_web_search(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
-        """网络搜索工具（预留）"""
-        return {
-            "results": [],
-            "evidence": Evidence(
+        """Tavily 网络搜索工具。"""
+        query = self._build_tavily_query(param, task)
+        try:
+            raw = self._run_tavily_search(query=query, max_results=6)
+        except Exception as exc:
+            fallback = Evidence(
                 source="web-search",
-                tool="search",
-                claim=f"网络搜索: {param}",
-                content="搜索功能待实现",
-                time_range="实时外部检索；当前为占位结果",
-                data_caliber="外部网页检索口径，当前为占位结果",
-                source_credibility=0.30,
+                tool="tavily-search",
+                claim=f"Tavily 检索失败: {query[:80]}",
+                content=str(exc),
+                time_range="实时外部检索；未获取到可用结果",
+                data_caliber="Tavily 外部网页检索口径；本次调用失败",
+                source_credibility=0.20,
                 coverage_dimensions=["外部补证"],
-                coverage_score=0.10,
-                confidence=0.5,
-                limitations=["搜索功能待实现"]
+                coverage_score=0.05,
+                confidence=0.2,
+                limitations=[f"Tavily 调用失败: {exc}"]
             )
+            return {
+                "success": False,
+                "query": query,
+                "results": [],
+                "rejected": [],
+                "evidences": [fallback],
+                "error": str(exc),
+            }
+
+        filtered = self._filter_tavily_results(raw, task)
+        evidences = self._build_tavily_evidences(query, filtered, task)
+        if not evidences:
+            rejected_summary = "; ".join(
+                f"{item.get('reason')}:{item.get('title') or item.get('url')}"
+                for item in filtered.get("rejected", [])[:5]
+            ) or "Tavily 未返回合格网页证据"
+            evidences = [
+                Evidence(
+                    source="web-search",
+                    tool="tavily-search",
+                    claim=f"Tavily 外部补证无合格结果: {query[:80]}",
+                    content=rejected_summary,
+                    time_range="实时外部检索；无合格结果",
+                    data_caliber="Tavily 外部网页检索口径；低质量或实体不匹配结果已剔除",
+                    source_credibility=0.25,
+                    coverage_dimensions=["外部补证"],
+                    coverage_score=0.10,
+                    confidence=0.25,
+                    limitations=["无合格 Tavily 结果", rejected_summary[:180]]
+                )
+            ]
+
+        return {
+            "success": True,
+            "query": query,
+            "raw_count": filtered.get("raw_count", 0),
+            "results": filtered.get("accepted", []),
+            "rejected": filtered.get("rejected", []),
+            "rejected_count": len(filtered.get("rejected", [])),
+            "evidences": evidences,
         }
+
+    def _run_tavily_search(self, query: str, max_results: int = 6) -> Dict[str, Any]:
+        """调用本地 tavily-search skill。"""
+        workspace_root = Path(__file__).resolve().parents[3]
+        tavily_script = workspace_root / "skills" / "tavily-search" / "scripts" / "tavily_search.py"
+        if not tavily_script.exists():
+            raise RuntimeError(f"tavily_search.py not found: {tavily_script}")
+
+        spec = importlib.util.spec_from_file_location("workspace_tavily_search", tavily_script)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("cannot load tavily_search.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.tavily_search(
+            query=query,
+            max_results=max(1, min(max_results, 10)),
+            include_answer=True,
+            search_depth="basic",
+        )
+
+    def _build_tavily_query(self, param: str, task: OrchestrationTask) -> str:
+        intent = task.user_intent
+        raw_query = intent.raw_query if intent else ""
+        time_range = intent.time_range if intent else ""
+        entities = " ".join(intent.entities or []) if intent else ""
+        topic = param.replace("_", " ") if param else "market strategy"
+        terms = "销量 交付 市场份额 竞品 战略 政策"
+        return " ".join(part for part in [entities, raw_query, time_range, topic, terms] if part)
+
+    def _filter_tavily_results(self, raw: Dict[str, Any], task: OrchestrationTask) -> Dict[str, Any]:
+        rows = raw.get("results") or []
+        entities = task.user_intent.entities if task.user_intent else []
+        accepted = []
+        rejected = []
+        for item in rows:
+            normalized = self._normalize_tavily_item(item)
+            haystack = " ".join([
+                normalized.get("title", ""),
+                normalized.get("url", ""),
+                normalized.get("snippet", ""),
+            ])
+            source_grade = self._source_grade(normalized.get("url", ""), normalized.get("title", ""))
+            entity_ok = True if not entities else self._contains_any(haystack, entities)
+            if source_grade == "C":
+                reason = "low_quality_source"
+            elif not entity_ok:
+                reason = "entity_mismatch"
+            else:
+                reason = ""
+
+            normalized["source_grade"] = source_grade
+            normalized["source_date"] = self._infer_source_date(
+                normalized.get("title", ""),
+                normalized.get("snippet", ""),
+                normalized.get("url", ""),
+            )
+            normalized["coverage_score"] = self._web_coverage_score(normalized, task, entity_ok)
+            normalized["source_credibility"] = self._source_credibility_from_grade(source_grade)
+
+            if reason:
+                rejected_item = dict(normalized)
+                rejected_item["rejection_reason"] = reason
+                rejected.append(rejected_item)
+            else:
+                normalized["rejection_reason"] = ""
+                accepted.append(normalized)
+
+        return {
+            "raw_count": len(rows),
+            "accepted": accepted,
+            "rejected": rejected,
+            "answer": raw.get("answer"),
+        }
+
+    def _normalize_tavily_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "title": str(item.get("title") or ""),
+            "url": str(item.get("url") or item.get("link") or ""),
+            "snippet": str(item.get("snippet") or item.get("content") or ""),
+        }
+
+    def _build_tavily_evidences(
+        self,
+        query: str,
+        filtered: Dict[str, Any],
+        task: OrchestrationTask
+    ) -> List[Evidence]:
+        evidences = []
+        time_range = task.user_intent.time_range if task.user_intent else "实时外部检索"
+        rejected_summary = self._rejected_summary(filtered.get("rejected", []))
+        for item in filtered.get("accepted", [])[:5]:
+            grade = item.get("source_grade") or "B"
+            coverage_score = item.get("coverage_score", 0.5)
+            credibility = item.get("source_credibility", 0.55)
+            limitations = []
+            if rejected_summary:
+                limitations.append(f"剔除结果: {rejected_summary[:180]}")
+            if item.get("source_date") == "unknown":
+                limitations.append("未识别到来源日期")
+            evidences.append(
+                Evidence(
+                    source="web-search",
+                    tool="tavily-search",
+                    claim=f"Tavily 外部补证: {item.get('title') or query[:80]}",
+                    content=(
+                        f"title={item.get('title')}; url={item.get('url')}; "
+                        f"date={item.get('source_date')}; source_grade={grade}; "
+                        f"rejection_reason={item.get('rejection_reason', '') or 'accepted'}; "
+                        f"snippet={item.get('snippet')[:500]}"
+                    ),
+                    time_range=f"{time_range}; source_date={item.get('source_date')}",
+                    data_caliber="Tavily 外部网页检索口径；按实体匹配和来源等级过滤",
+                    source_url=item.get("url", ""),
+                    source_date=item.get("source_date", ""),
+                    source_credibility=credibility,
+                    coverage_dimensions=["外部补证", "URL", "来源日期", "来源等级", "剔除原因"],
+                    coverage_score=coverage_score,
+                    confidence=round(min(0.85, 0.35 * credibility + 0.45 * coverage_score + 0.20), 3),
+                    limitations=limitations,
+                )
+            )
+        return evidences
+
+    def _source_grade(self, url: str, title: str = "") -> str:
+        probe = f"{url} {title}".lower()
+        high_quality_domains = [
+            "caam.org.cn",
+            "cpcaauto.com",
+            "gov.cn",
+            "miit.gov.cn",
+            "xinhuanet.com",
+            "reuters.com",
+            "autohome.com.cn",
+            "yiche.com",
+            "d1ev.com",
+            "gasgoo.com",
+            "stcn.com",
+            "bydglobal.com",
+            "tesla.cn",
+            "mi.com",
+        ]
+        low_quality_domains = [
+            "guba.eastmoney.com",
+            "xueqiu.com",
+            "stock",
+            "forecast",
+        ]
+        if any(domain in probe for domain in high_quality_domains):
+            return "A"
+        if any(domain in probe for domain in low_quality_domains):
+            return "C"
+        return "B"
+
+    def _source_credibility_from_grade(self, grade: str) -> float:
+        return {"A": 0.85, "B": 0.62, "C": 0.30}.get(grade, 0.50)
+
+    def _infer_source_date(self, *parts: Any) -> str:
+        text = " ".join(str(part or "") for part in parts)
+        match = re.search(r"20\d{2}(?:[-/.年]\d{1,2}(?:[-/.月]\d{1,2}日?)?)?", text)
+        if not match:
+            return "unknown"
+        return (
+            match.group(0)
+            .replace("年", "-")
+            .replace("月", "-")
+            .replace("日", "")
+            .replace("/", "-")
+            .replace(".", "-")
+        )
+
+    def _contains_any(self, text: str, needles: List[str]) -> bool:
+        text_lower = (text or "").lower()
+        for needle in needles or []:
+            if not needle:
+                continue
+            if needle.isascii():
+                if re.search(rf"(?<![A-Za-z0-9]){re.escape(needle.lower())}(?![A-Za-z0-9])", text_lower):
+                    return True
+            elif needle in text:
+                return True
+        return False
+
+    def _web_coverage_score(self, item: Dict[str, Any], task: OrchestrationTask, entity_ok: bool) -> float:
+        haystack = " ".join([item.get("title", ""), item.get("snippet", ""), item.get("url", "")])
+        theme_terms = ["销量", "交付", "市场", "份额", "竞品", "价格", "政策", "战略", "出口", "渠道"]
+        theme_hits = sum(1 for term in theme_terms if term in haystack)
+        score = 0.25 + min(0.35, theme_hits * 0.07)
+        if entity_ok:
+            score += 0.20
+        if item.get("source_date") and item.get("source_date") != "unknown":
+            score += 0.10
+        if item.get("source_grade") == "A":
+            score += 0.10
+        return round(max(0.05, min(1.0, score)), 3)
+
+    def _rejected_summary(self, rejected: List[Dict[str, Any]]) -> str:
+        if not rejected:
+            return ""
+        parts = []
+        for item in rejected[:5]:
+            label = item.get("title") or item.get("url") or "untitled"
+            parts.append(f"{item.get('rejection_reason')}:{label[:60]}")
+        return "; ".join(parts)
     
     # ===== 辅助方法 =====
     

@@ -334,7 +334,7 @@ class QualityGate:
         facts = result.get("facts") or []
         evidence_sources = result.get("evidence_sources") or []
 
-        source_facts = facts or evidence_sources
+        source_facts = list(facts) + list(evidence_sources)
         if not source_facts:
             return QualityCheckResult(
                 check_name="data_caliber_and_time_range",

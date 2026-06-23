@@ -198,6 +198,102 @@ class P3ReportQualityTest(unittest.TestCase):
         self.assertIn("证据账本", result["answer"])
         self.assertIn("口径", result["answer"])
 
+    def test_tavily_web_search_enters_evidence_ledger_with_quality_metadata(self) -> None:
+        orchestrator = StrategyOrchestrator()
+
+        def fake_nl2sql(param, task, state):
+            return {
+                "evidence": Evidence(
+                    source="nl2sql-pg",
+                    tool="fake_market_db",
+                    claim="结构化数据查询: 比亚迪市场机会",
+                    content="比亚迪最近12个月销量3,000,000辆，份额25%",
+                    time_range=task.user_intent.time_range,
+                    data_caliber="乘用车结构化销量数据库口径",
+                    metrics=["销量", "份额", "趋势", "车型", "动力", "价格"],
+                    coverage_dimensions=["时间范围", "口径"],
+                    coverage_score=0.9,
+                    source_credibility=0.88,
+                    confidence=0.86,
+                )
+            }
+
+        def fake_rag(param, task, state):
+            return {
+                "evidence": Evidence(
+                    source="rag",
+                    tool="fake_vector_retriever",
+                    claim="RAG 检索: 比亚迪战略背景",
+                    content="行业报告显示比亚迪持续强化成本与产品矩阵优势",
+                    time_range=f"用户问题时间范围: {task.user_intent.time_range}；文档发布日期以元数据为准",
+                    data_caliber="向量检索文档摘要口径",
+                    coverage_dimensions=["行业报告", "趋势解释"],
+                    coverage_score=0.7,
+                    source_credibility=0.72,
+                    confidence=0.72,
+                )
+            }
+
+        def fake_framework(param, task, state):
+            return {
+                "evidence": Evidence(
+                    source="analysis-framework",
+                    tool=param,
+                    claim="框架分析: SWOT",
+                    content="基于已入账证据生成机会判断",
+                    time_range=task.user_intent.time_range,
+                    data_caliber="基于已入账证据的分析框架推断",
+                    coverage_dimensions=["推断", "战略框架"],
+                    coverage_score=0.6,
+                    source_credibility=0.60,
+                    confidence=0.65,
+                )
+            }
+
+        def fake_tavily(query, max_results=6):
+            return {
+                "query": query,
+                "answer": "比亚迪近期市场份额和出口策略受到关注。",
+                "results": [
+                    {
+                        "title": "2026年比亚迪销量与市场份额分析",
+                        "url": "https://www.autohome.com.cn/news/2026/06/byd-market.html",
+                        "content": "2026年6月，比亚迪销量、交付和市场份额继续受到行业关注。",
+                    },
+                    {
+                        "title": "比亚迪股票预测讨论",
+                        "url": "https://xueqiu.com/example/byd",
+                        "content": "低质量股票预测内容。",
+                    },
+                ],
+            }
+
+        orchestrator.register_tool("nl2sql-pg", fake_nl2sql)
+        orchestrator.register_tool("rag", fake_rag)
+        orchestrator.register_tool("analysis-framework", fake_framework)
+        orchestrator._run_tavily_search = fake_tavily  # type: ignore[method-assign]
+
+        task = create_task_from_user_query(
+            "评估比亚迪最近12个月市场机会",
+            time_range="最近12个月",
+            entities=["比亚迪"],
+        )
+        result = orchestrator.execute(task).to_dict()
+        web_evidence = [
+            item for item in result["evidence_ledger"]["evidences"]
+            if item.get("source") == "web-search"
+        ]
+
+        self.assertTrue(web_evidence)
+        item = web_evidence[0]
+        self.assertEqual(item["source_url"], "https://www.autohome.com.cn/news/2026/06/byd-market.html")
+        self.assertIn("2026", item["source_date"])
+        self.assertGreaterEqual(item["coverage_score"], 0.5)
+        self.assertIn("source_grade=A", item["content"])
+        self.assertIn("rejection_reason=accepted", item["content"])
+        self.assertIn("剔除结果", " ".join(item.get("limitations") or []))
+        self.assertIn("web-search", {src.get("source") for src in result["evidence_sources"]})
+
 
 if __name__ == "__main__":
     unittest.main()
