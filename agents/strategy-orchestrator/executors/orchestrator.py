@@ -37,6 +37,10 @@ try:
         get_evidence_ledger,
         reset_evidence_ledger
     )
+    from .evidence.evidence_factory import (
+        build_sql_evidence,
+        build_rag_evidence,
+    )
     from .quality.quality_gate import (
         QualityGate,
         get_quality_gate,
@@ -682,18 +686,11 @@ class StrategyOrchestrator:
             # 返回证据
             return {
                 "data": data,
-                "evidence": Evidence(
-                    source="nl2sql-pg",
-                    tool="knowledge_base",
-                    claim=f"结构化数据查询: {param}",
-                    content=str(data)[:500],
+                "evidence": build_sql_evidence(
+                    param=param,
+                    data=data,
                     time_range=time_range,
-                    data_caliber="结构化销量/份额数据库口径，以 MarketKnowledgeBase 返回字段为准",
-                    source_credibility=0.85,
-                    coverage_dimensions=["销量", "份额", "增速", "时间范围", "口径"],
-                    coverage_score=0.75,
-                    confidence=0.85,
-                    metrics=["销量", "份额", "增速"]
+                    user_intent=task.user_intent
                 )
             }
         
@@ -702,40 +699,120 @@ class StrategyOrchestrator:
             raise
     
     def _tool_rag_retrieve(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
-        """RAG 检索工具"""
+        """RAG 检索工具（带过滤和 rejected evidence 追踪）"""
         try:
             sys.path.insert(0, r"E:\AI\data\envs\car_agent_env\ai-decision\rag-engine")
             from retrieval.retriever import retrieve
-            
+
             analysis_plan = state.analysis_plan or build_analysis_plan(task)
             query = analysis_plan.rag_query or (task.user_intent.raw_query if task.user_intent else param)
-            results = retrieve(query, top_k=5)
-            
-            # 构建证据
-            contents = [r["document"][:200] for r in results]
+
+            # === 从 analysis_plan 构建 RAG 过滤条件 ===
+            metadata_filter = {}
+            if analysis_plan.target_brand:
+                metadata_filter["brand"] = analysis_plan.target_brand
+
+            # 解析时间范围 → 限制只检索近期文档
+            time_limit = None
+            if analysis_plan.time_range:
+                import re
+                m = re.search(r"(\d+)\s*个月", analysis_plan.time_range)
+                if m:
+                    time_limit = int(m.group(1))
+
+            # 调用 retrieve（宽召回 top_k=20，后续过滤）
+            raw_results = retrieve(
+                query=query,
+                top_k=20,
+                metadata_filter=metadata_filter if metadata_filter else None,
+                min_score=0.30   # 最低相似度阈值
+            )
+
+            # === 质量过滤：品牌/时间/主题一致性 ===
+            rejected_evidence = []
+            filtered_results = []
+            for r in raw_results:
+                meta = r.get("metadata", {})
+                reasons = []
+
+                # 品牌过滤：用户指定了品牌，检索结果却不相关
+                if analysis_plan.target_brand and analysis_plan.target_brand not in r["document"]:
+                    reasons.append(f"品牌『{analysis_plan.target_brand}』在文档中未出现")
+
+                # 时间过滤：只保留近期文档（允许部分命中）
+                if time_limit and meta.get("publish_date"):
+                    try:
+                        doc_year = int(str(meta["publish_date"])[:4])
+                        import datetime
+                        current_year = datetime.datetime.now().year
+                        if current_year - doc_year > 2:
+                            reasons.append(f"文档日期 {meta['publish_date']} 超过 2 年")
+                    except (ValueError, TypeError):
+                        pass
+
+                # 来源可信度过滤：低质量来源
+                source = meta.get("source", "")
+                low_quality_sources = ["论坛", "个人博客", "未知名来源"]
+                if source in low_quality_sources:
+                    reasons.append(f"来源『{source}』可信度低")
+
+                if reasons:
+                    rejected_evidence.append({
+                        "document": r["document"][:200],
+                        "score": r["score"],
+                        "source": source,
+                        "rejection_reason": "; ".join(reasons)
+                    })
+                else:
+                    filtered_results.append(r)
+
+            # 最多保留 top_k=5
+            results = filtered_results[:5]
+
+            # === 构建证据（带 URL/日期/来源等级）===
+            contents = [r["document"][:300] for r in results]
             evidence_content = "; ".join(contents)
-            
+
+            # 来源等级
+            def _grade_source(src: str) -> str:
+                high = ["乘联会", "中汽协", "国家统计局", "工信部", "发改委", "财政部", "咨询机构"]
+                medium = ["汽车之家", "易车", "懂车帝", "盖世汽车", "第一财经"]
+                for h in high:
+                    if h in src:
+                        return "high"
+                for m in medium:
+                    if m in src:
+                        return "medium"
+                return "low"
+
+            evidence_list = []
+            for r in results:
+                meta = r.get("metadata", {})
+                src = meta.get("source", "未知名来源")
+                evidence_list.append({
+                    "source_url": meta.get("file_name", ""),
+                    "source_date": meta.get("publish_date", ""),
+                    "source_grade": _grade_source(src),
+                    "source_credibility": {"high": 0.85, "medium": 0.70, "low": 0.50}.get(_grade_source(src), 0.60),
+                    "coverage_dimensions": ["行业报告", "政策背景", "趋势解释"],
+                    "content": r["document"][:300]
+                })
+
             return {
                 "results": results,
-                "evidence": Evidence(
-                    source="rag",
-                    tool="vector_retriever",
-                    claim=f"RAG 检索: {query[:50]}",
-                    content=evidence_content,
-                    time_range=f"用户问题时间范围: {analysis_plan.time_range}；文档发布日期以元数据为准",
-                    data_caliber="向量检索文档摘要口径，非结构化统计口径",
-                    source_credibility=0.70,
-                    coverage_dimensions=["行业报告", "政策背景", "趋势解释"],
-                    coverage_score=0.60 if results else 0.20,
-                    confidence=0.7,
-                    limitations=["仅返回已有文档"]
-                )
+                "rejected_evidence": rejected_evidence,
+                "evidence": build_rag_evidence(
+                    results=results,
+                    query=query,
+                    time_range=analysis_plan.time_range,
+                    user_intent=task.user_intent
+                ),
+                "evidence_details": evidence_list
             }
-        
+
         except Exception as e:
             logger.error(f"RAG tool failed: {e}")
             raise
-    
     def _tool_analysis_framework(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
         """分析框架工具"""
         # 简化实现
