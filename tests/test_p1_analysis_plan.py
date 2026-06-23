@@ -14,8 +14,9 @@ if str(ORCH_ROOT) not in sys.path:
     sys.path.insert(0, str(ORCH_ROOT))
 
 from evidence.evidence_ledger import Evidence  # noqa: E402
-from executors.orchestrator import StrategyOrchestrator  # noqa: E402
+from executors.orchestrator import ReactState, StrategyOrchestrator, ToolResult  # noqa: E402
 from planning.analysis_plan import build_analysis_plan  # noqa: E402
+from planning.seven_step_phases import AnalysisPhase  # noqa: E402
 from protocols.task_protocol import create_task_from_user_query  # noqa: E402
 from tools.targeted_sql_pack import build_targeted_sql_evidences  # noqa: E402
 
@@ -220,6 +221,94 @@ class P1AnalysisPlanTest(unittest.TestCase):
         self.assertTrue(result["replan_history"])
         self.assertIn("model_contribution", result["reflection"]["structured_blocks"])
         self.assertEqual(result["reflection"]["missing_targeted_sql_blocks"], [])
+
+    def test_reflection_detects_stagnation_and_strategic_alert(self) -> None:
+        orchestrator = StrategyOrchestrator()
+        calls = {"targeted": 0}
+
+        def incomplete_targeted_sql_pack(param, task, state):
+            calls["targeted"] += 1
+            result = {
+                "success": True,
+                "query_mode": "targeted_sql_pack",
+                "period_start": 202601,
+                "period_end": 202602,
+                "blocks": [
+                    {"name": "market_overview", "purpose": "market base", "row_count": 1, "rows": [{"total_sales": 100000}]},
+                    {"name": "monthly_trend", "purpose": "monthly trend", "row_count": 2, "rows": [{"month": 202601, "sales": 45000}, {"month": 202602, "sales": 55000}]},
+                    {"name": "yoy_change", "purpose": "year-on-year", "row_count": 2, "rows": [{"period": "current", "sales": 100000}, {"period": "previous_year", "sales": 90000}]},
+                    {"name": "competitor_share", "purpose": "competitor share", "row_count": 1, "rows": [{"brand": "TestBrand", "sales": 100000}]},
+                ],
+            }
+            return {**result, "evidences": build_targeted_sql_evidences(result, state.analysis_plan)}
+
+        def stable_nl2sql(param, task, state):
+            return {"evidence": Evidence(
+                source="nl2sql-pg", tool="fake_market_db", claim="stable sales",
+                content="stable structured evidence", time_range=state.analysis_plan.time_range,
+                data_caliber="fake DB", metrics=["sales"],
+                coverage_dimensions=["time_range"], coverage_score=0.7,
+                source_credibility=0.88, confidence=0.8)}
+
+        orchestrator.register_tool("targeted-sql-pack", incomplete_targeted_sql_pack)
+        orchestrator.register_tool("nl2sql-pg", stable_nl2sql)
+        task = create_task_from_user_query(
+            "TestBrand sales data",
+            time_range="last 2 months",
+            entities=["TestBrand"],
+        )
+        task.max_react_cycles = 2
+
+        result = orchestrator.execute(task).to_dict()
+
+        self.assertEqual(calls["targeted"], 2)
+        self.assertTrue(result["reflection"]["is_stagnant"])
+        self.assertGreaterEqual(result["reflection"]["stagnation_count"], 1)
+        self.assertTrue(result["reflection"]["strategic_alert"])
+        self.assertTrue(
+            any(item["reason"] == "strategic_pivot" for item in result["replan_history"]),
+            result["replan_history"],
+        )
+
+    def test_phase_tracker_enforces_requirements_before_advancing(self) -> None:
+        orchestrator = StrategyOrchestrator()
+        task = create_task_from_user_query(
+            "Analyze TestBrand market strategy",
+            time_range="last 12 months",
+            entities=["TestBrand"],
+        )
+        state = ReactState(analysis_plan=build_analysis_plan(task))
+        state.tool_results = [
+            ToolResult(
+                tool_name="targeted-sql-pack",
+                success=True,
+                result={
+                    "blocks": [
+                        {"name": "market_overview", "row_count": 1},
+                        {"name": "monthly_trend", "row_count": 1},
+                        {"name": "yoy_change", "row_count": 1},
+                        {"name": "competitor_share", "row_count": 1},
+                    ]
+                },
+            )
+        ]
+        state.reflection = {"overall_confidence": 0.65, "evidence_gaps": [], "conflicts": []}
+
+        moved, phase, reasons = orchestrator.run_phase(state.current_phase, task, state)
+
+        self.assertTrue(moved)
+        self.assertEqual(phase, AnalysisPhase.DATA_COLLECTION.value)
+        self.assertIn("missing:rag_context", reasons)
+        self.assertEqual(state.current_phase, AnalysisPhase.DATA_COLLECTION.value)
+
+        state.tool_results.append(ToolResult(tool_name="rag", success=True, result={"results": ["context"]}))
+        state.completed_steps.append("analysis-framework:trend_analysis")
+        moved, phase, reasons = orchestrator.run_phase(state.current_phase, task, state)
+
+        self.assertTrue(moved)
+        self.assertEqual(phase, AnalysisPhase.REPORT_GENERATION.value)
+        self.assertIn("missing:answer_drafted", reasons)
+        self.assertEqual(state.current_phase, AnalysisPhase.REPORT_GENERATION.value)
 
 
 if __name__ == "__main__":

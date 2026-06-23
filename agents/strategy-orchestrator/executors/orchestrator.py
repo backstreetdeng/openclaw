@@ -57,6 +57,10 @@ try:
         AnalysisPlan,
         build_analysis_plan
     )
+    from .planning.seven_step_phases import (
+        AnalysisPhase,
+        PhaseTracker,
+    )
     from .tools.targeted_sql_pack import (
         REQUIRED_TARGETED_SQL_BLOCKS,
         build_targeted_sql_evidences,
@@ -102,6 +106,10 @@ except ImportError as e:
         AnalysisPlan,
         build_analysis_plan
     )
+    from planning.seven_step_phases import (
+        AnalysisPhase,
+        PhaseTracker,
+    )
     from tools.targeted_sql_pack import (
         REQUIRED_TARGETED_SQL_BLOCKS,
         build_targeted_sql_evidences,
@@ -137,6 +145,12 @@ class ReactState:
     reflection: Dict[str, Any] = field(default_factory=dict)
     replan_history: List[Dict[str, Any]] = field(default_factory=list)
     evidence_gaps: List[str] = field(default_factory=list)
+    reflection_history: List[Dict[str, Any]] = field(default_factory=list)
+    confidence_trajectory: List[float] = field(default_factory=list)
+    stagnation_count: int = 0
+    current_phase: str = AnalysisPhase.PROBLEM_DEFINITION.value
+    phase_history: List[Dict[str, Any]] = field(default_factory=list)
+    required_outputs: Dict[str, bool] = field(default_factory=dict)
     is_complete: bool = False
     stop_reason: str = ""
     should_stop: bool = False
@@ -158,6 +172,7 @@ class StrategyOrchestrator:
         self.evidence_ledger = get_evidence_ledger()
         self.quality_gate = get_quality_gate()
         self.rollback_handler = get_rollback_handler()
+        self.phase_tracker = PhaseTracker()
         
         # 工具注册表
         self._tools: Dict[str, Callable] = {}
@@ -197,6 +212,10 @@ class StrategyOrchestrator:
         
         # 搜索
         self._tools["web-search"] = self._tool_web_search
+
+        # 方法论状态追踪
+        self._tools["phase-tracker"] = self._tool_phase_tracker
+        self._tools["phase_tracker"] = self._tool_phase_tracker
     
     def register_tool(self, name: str, tool_func: Callable):
         """注册工具"""
@@ -298,6 +317,9 @@ class StrategyOrchestrator:
             
             # ===== Observe & Reflect =====
             self._observe_and_reflect(task, state)
+
+            # ===== Seven-step phase tracking =====
+            self.run_phase(state.current_phase, task, state)
             
             # ===== Re-plan =====
             if not state.should_stop:
@@ -469,8 +491,53 @@ class StrategyOrchestrator:
         if missing_sources:
             state.evidence_gaps.append("missing_sources:" + ",".join(missing_sources))
 
+        previous_conf = state.confidence_trajectory[-1] if state.confidence_trajectory else None
+        previous_evidence_count = (
+            state.reflection_history[-1].get("evidence_count", 0)
+            if state.reflection_history
+            else 0
+        )
+        evidence_count = len(self.evidence_ledger.evidences)
+        confidence_delta = (
+            overall_conf - previous_conf
+            if previous_conf is not None
+            else overall_conf
+        )
+        confidence_improved = (
+            confidence_delta >= 0.02
+            if previous_conf is not None
+            else overall_conf > 0
+        )
+        new_evidence_count = max(0, evidence_count - previous_evidence_count)
+        repeated_plan = any(
+            prior.get("current_plan") == state.current_plan
+            for prior in state.reflection_history[-2:]
+        )
+
+        if previous_conf is not None and not confidence_improved:
+            state.stagnation_count += 1
+        else:
+            state.stagnation_count = 0
+
+        is_stagnant = bool(previous_conf is not None and not confidence_improved)
+        if is_stagnant and state.stagnation_count >= 2:
+            strategic_alert = (
+                "连续多轮置信度无明显提升，常规补证失效；应切换证据策略，"
+                "例如从结构化 SQL 转向 RAG 深挖、历史趋势或带降级说明的部分结论。"
+            )
+        elif is_stagnant:
+            strategic_alert = (
+                "本轮置信度未提升；下一轮应补充不同来源或不同口径证据，避免重复执行同类步骤。"
+            )
+        else:
+            strategic_alert = ""
+
+        phase_snapshot = self.phase_tracker.phase_tracker(state)
+        state.confidence_trajectory.append(round(overall_conf, 4))
+
         state.reflection = {
             "cycle": state.cycle,
+            "current_plan": list(state.current_plan),
             "successful_tools": [r.tool_name for r in state.tool_results if r.success],
             "failed_tools": [
                 {"tool": r.tool_name, "error": r.error}
@@ -479,12 +546,28 @@ class StrategyOrchestrator:
             ],
             "overall_confidence": overall_conf,
             "confidence_details": conf_details,
+            "confidence_trajectory": list(state.confidence_trajectory),
+            "confidence_delta": round(confidence_delta, 4),
+            "confidence_improved": confidence_improved,
+            "evidence_count": evidence_count,
+            "new_evidence_count": new_evidence_count,
+            "plan_effective": confidence_improved and new_evidence_count > 0,
+            "repeated_plan": repeated_plan,
+            "is_stagnant": is_stagnant,
+            "stagnation_count": state.stagnation_count,
+            "strategic_alert": strategic_alert,
+            "next_phase": phase_snapshot.get("next_phase"),
+            "current_phase": state.current_phase,
+            "phase_requirements_met": phase_snapshot.get("phase_requirements_met", False),
+            "phase_missing_requirements": phase_snapshot.get("missing_requirements", []),
+            "phase_requirements_status": phase_snapshot.get("requirements_status", {}),
             "structured_blocks": structured_blocks,
             "missing_targeted_sql_blocks": missing_blocks,
             "missing_sources": missing_sources,
             "conflicts": conflicts,
             "evidence_gaps": list(state.evidence_gaps),
         }
+        state.reflection_history.append(dict(state.reflection))
 
         # 判断是否足够
         # 标准：
@@ -514,6 +597,12 @@ class StrategyOrchestrator:
         """
         Re-plan 阶段：调整计划
         """
+        if state.reflection.get("is_stagnant"):
+            self._strategic_replan(task, state)
+            if state.replan_queue:
+                logger.info(f"Strategic re-plan: {state.replan_queue}")
+                return
+
         replan_steps: List[str] = []
 
         missing_blocks = self._missing_targeted_sql_blocks(task, state)
@@ -580,6 +669,120 @@ class StrategyOrchestrator:
                         "next_plan": list(state.replan_queue),
                     }
                 )
+
+    def _strategic_replan(
+        self,
+        task: OrchestrationTask,
+        state: ReactState
+    ) -> None:
+        """当常规补证没有提升置信度时，切换证据策略。"""
+        stagnation_count = int(state.reflection.get("stagnation_count", 0) or 0)
+        missing_sources = self._missing_evidence_sources(task, state)
+        state.current_plan = []
+
+        if stagnation_count >= 2:
+            if "rag" in missing_sources or task.task_type != TaskType.SIMPLE_QUERY:
+                pivot_step = "rag:deep_context"
+                pivot_type = "force_rag_pivot"
+            elif "web-search" in missing_sources:
+                pivot_step = "web-search:external_validation"
+                pivot_type = "force_web_pivot"
+            else:
+                pivot_step = "report-generator:proceed_with_partial"
+                pivot_type = "proceed_with_partial"
+            message = "Evidence collection stagnant after 2+ cycles"
+        elif stagnation_count >= 1:
+            pivot_step = "rag:deep_context"
+            pivot_type = "add_rag_depth"
+            message = "Confidence did not improve in the last cycle"
+        else:
+            return
+
+        state.replan_queue = self._dedupe_replan_steps(
+            [pivot_step],
+            state,
+            allow_failed_retry=True,
+        )
+        state.replan_history.append(
+            {
+                "cycle": state.cycle,
+                "reason": "strategic_pivot",
+                "pivot_type": pivot_type,
+                "message": message,
+                "stagnation_count": stagnation_count,
+                "confidence_trajectory": list(state.confidence_trajectory),
+                "next_plan": list(state.replan_queue),
+            }
+        )
+
+    def run_phase(
+        self,
+        phase: str,
+        task: OrchestrationTask,
+        state: ReactState
+    ) -> Tuple[bool, str, List[str]]:
+        """执行七步法阶段门禁，并记录阶段推进历史。"""
+        moved_any = False
+        reasons: List[str] = []
+        starting_phase = state.current_phase
+
+        # 一个 ReAct 周期可能一次性补齐多个阶段的输出，允许连续推进到首个缺口。
+        for _ in range(7):
+            moved, next_phase, phase_reasons, required_outputs = self.phase_tracker.run_phase(
+                state.current_phase,
+                task,
+                state,
+                extra_outputs=state.required_outputs,
+            )
+            state.required_outputs = dict(required_outputs)
+            phase_info = self.phase_tracker.phase_tracker(
+                state,
+                extra_outputs=state.required_outputs,
+            )
+            history_item = {
+                "cycle": state.cycle,
+                "from_phase": state.current_phase,
+                "to_phase": next_phase,
+                "moved_forward": moved,
+                "reasons": list(phase_reasons),
+                "requirements_status": dict(required_outputs),
+                "missing_requirements": phase_info.get("missing_requirements", []),
+            }
+            state.phase_history.append(history_item)
+            reasons.extend(phase_reasons)
+
+            if not moved:
+                for item in history_item["missing_requirements"]:
+                    gap = f"phase_missing:{state.current_phase}:{item}"
+                    if gap not in state.evidence_gaps:
+                        state.evidence_gaps.append(gap)
+                break
+
+            moved_any = True
+            state.current_phase = next_phase
+            if next_phase == AnalysisPhase.SELF_REVIEW.value:
+                break
+
+        phase_snapshot = self.phase_tracker.phase_tracker(
+            state,
+            extra_outputs=state.required_outputs,
+        )
+        if state.reflection:
+            state.reflection.update(
+                {
+                    "current_phase": state.current_phase,
+                    "phase_from": starting_phase,
+                    "next_phase": phase_snapshot.get("next_phase"),
+                    "phase_requirements_met": phase_snapshot.get("phase_requirements_met", False),
+                    "phase_missing_requirements": phase_snapshot.get("missing_requirements", []),
+                    "phase_requirements_status": phase_snapshot.get("requirements_status", {}),
+                    "phase_history": list(state.phase_history),
+                }
+            )
+            if state.reflection_history:
+                state.reflection_history[-1] = dict(state.reflection)
+
+        return moved_any, state.current_phase, reasons
     
     def _check_stop_conditions(
         self,
@@ -834,6 +1037,19 @@ class StrategyOrchestrator:
         return result
     
     # ===== 工具实现 =====
+
+    def _tool_phase_tracker(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
+        """返回当前七步法阶段状态，供外部 trace 和调试查看。"""
+        snapshot = self.phase_tracker.phase_tracker(
+            state,
+            extra_outputs=state.required_outputs,
+        )
+        return {
+            "success": True,
+            "phase_state": snapshot,
+            "phase_history": list(state.phase_history),
+            "required_outputs": dict(state.required_outputs),
+        }
     
     def _tool_targeted_sql_pack(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
         """Run the orchestrator-owned targeted SQL pack."""
