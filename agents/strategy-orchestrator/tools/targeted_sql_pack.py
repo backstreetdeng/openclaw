@@ -78,10 +78,11 @@ def run_targeted_sql_pack(
         cur.execute('SELECT MAX("销售日期") AS max_month FROM sales_import')
         max_row = cur.fetchone() or {}
         max_month = int(max_row["max_month"])
+        min_month, max_month, prev_min_month, prev_max_month = _period_from_time_range(
+            max_month=max_month,
+            time_range=str(plan.get("time_range") or ""),
+        )
         month_count = _month_count_from_range(str(plan.get("time_range") or ""))
-        min_month = _month_shift(max_month, -(month_count - 1))
-        prev_min_month = _month_shift(min_month, -month_count)
-        prev_max_month = _month_shift(max_month, -month_count)
 
         common_cond, common_params = _market_condition(plan)
         brand_cond, brand_params = _brand_condition(plan.get("brand_aliases") or [])
@@ -360,6 +361,8 @@ def _jsonable(value: Any) -> Any:
 
 def _month_count_from_range(time_range: str) -> int:
     text = time_range or ""
+    if _explicit_year(text):
+        return 12
     if any(token in text for token in ["近半年", "最近半年", "6个月", "六个月"]):
         return 6
     if any(token in text for token in ["近三个月", "最近3个月", "3个月", "三个月"]):
@@ -367,6 +370,35 @@ def _month_count_from_range(time_range: str) -> int:
     if any(token in text for token in ["最近12个月", "近12个月", "12个月", "一年"]):
         return 12
     return 6
+
+
+def _period_from_time_range(max_month: int, time_range: str) -> Tuple[int, int, int, int]:
+    explicit_year = _explicit_year(time_range)
+    if explicit_year:
+        year_start = explicit_year * 100 + 1
+        year_end = explicit_year * 100 + 12
+        period_end = min(max_month, year_end)
+        if period_end < year_start:
+            period_end = year_end
+        period_start = year_start
+        prev_start = (explicit_year - 1) * 100 + 1
+        prev_end = _month_shift(period_end, -12)
+        return period_start, period_end, prev_start, prev_end
+
+    month_count = _month_count_from_range(time_range)
+    period_start = _month_shift(max_month, -(month_count - 1))
+    prev_start = _month_shift(period_start, -month_count)
+    prev_end = _month_shift(max_month, -month_count)
+    return period_start, max_month, prev_start, prev_end
+
+
+def _explicit_year(text: str) -> Optional[int]:
+    import re
+
+    match = re.search(r"(20\d{2})\s*年", text or "")
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 def _month_shift(yyyymm: int, delta: int) -> int:

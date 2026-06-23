@@ -117,6 +117,9 @@ def _brand_aliases(brand: Optional[str]) -> List[str]:
 
 def _normalize_time_range(query: str, requested: str) -> str:
     text = f"{query} {requested}"
+    explicit_year = _explicit_year(query)
+    if explicit_year:
+        return f"{explicit_year}年"
     if any(token in text for token in ["近半年", "最近半年", "6个月", "六个月"]):
         return "最近6个月"
     if any(token in text for token in ["近三个月", "最近3个月", "3个月", "三个月"]):
@@ -130,6 +133,8 @@ def _normalize_time_range(query: str, requested: str) -> str:
 
 def _month_count_from_range(time_range: str) -> int:
     text = time_range or ""
+    if _explicit_year(text):
+        return 12
     if any(token in text for token in ["近半年", "最近半年", "6个月", "六个月"]):
         return 6
     if any(token in text for token in ["近三个月", "最近3个月", "3个月", "三个月"]):
@@ -137,6 +142,13 @@ def _month_count_from_range(time_range: str) -> int:
     if any(token in text for token in ["最近12个月", "近12个月", "12个月", "一年"]):
         return 12
     return 6
+
+
+def _explicit_year(text: str) -> Optional[int]:
+    match = re.search(r"(20\d{2})\s*年", text or "")
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 def _infer_market_scope(query: str) -> str:

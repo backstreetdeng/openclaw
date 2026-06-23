@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import re
 import sys
 import time
 import traceback
@@ -125,7 +126,11 @@ def _infer_entities(question: str) -> List[str]:
 
 
 def _normalize_time_range(question: str, requested: Optional[str]) -> str:
-    source = requested or question or ""
+    year_match = re.search(r"(20\d{2})\s*年", question or "")
+    if year_match:
+        return f"{year_match.group(1)}年"
+
+    source = f"{question or ''} {requested or ''}"
     if any(k in source for k in ("近半年", "最近半年", "6个月", "六个月")):
         return "最近6个月"
     if any(k in source for k in ("近三个月", "最近3个月", "3个月", "三个月")):
@@ -133,6 +138,98 @@ def _normalize_time_range(question: str, requested: Optional[str]) -> str:
     if any(k in source for k in ("最近12个月", "近12个月", "12个月", "一年")):
         return "最近12个月"
     return requested or "最近6个月"
+
+
+def _react_trace(result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw = result.get("raw") if "raw" in result else result
+    raw = raw or {}
+    trace: List[Dict[str, Any]] = []
+
+    plan = raw.get("analysis_plan") or {}
+    if plan:
+        trace.append(
+            {
+                "phase": "Plan",
+                "stage": "stage2",
+                "status": "done",
+                "summary": (
+                    f"统一分析计划：市场={plan.get('market_scope') or '未指定'}；"
+                    f"时间={plan.get('time_range') or '未指定'}；"
+                    f"品牌={plan.get('target_brand') or '未指定'}；"
+                    f"价格带={plan.get('price_band') or '未指定'}"
+                ),
+                "detail": plan,
+            }
+        )
+
+    evidence_sources = raw.get("evidence_sources") or []
+    for idx, item in enumerate(evidence_sources, 1):
+        if not isinstance(item, dict):
+            continue
+        trace.append(
+            {
+                "phase": "Act",
+                "stage": "stage3",
+                "status": "done",
+                "summary": (
+                    f"{idx}. {item.get('source') or 'evidence'} / {item.get('tool') or 'tool'}："
+                    f"{item.get('claim') or '证据入账'}"
+                ),
+                "detail": {
+                    "source": item.get("source"),
+                    "tool": item.get("tool"),
+                    "confidence": item.get("confidence"),
+                    "time_range": item.get("time_range"),
+                    "data_caliber": item.get("data_caliber"),
+                    "source_grade": item.get("source_grade"),
+                },
+            }
+        )
+
+    reflection = raw.get("reflection") or {}
+    if reflection:
+        trace.append(
+            {
+                "phase": "Reflect",
+                "stage": "stage4",
+                "status": "done",
+                "summary": (
+                    f"置信度={float(reflection.get('overall_confidence') or 0):.1%}；"
+                    f"缺口={len(reflection.get('evidence_gaps') or [])}；"
+                    f"冲突={len(reflection.get('conflicts') or [])}；"
+                    f"停滞={reflection.get('stagnation_count') or 0}轮"
+                ),
+                "detail": reflection,
+            }
+        )
+
+    for idx, item in enumerate(raw.get("replan_history") or [], 1):
+        trace.append(
+            {
+                "phase": "Re-plan",
+                "stage": "stage4",
+                "status": "done",
+                "summary": f"{idx}. {item.get('reason') or 'replan'} → {', '.join(item.get('next_plan') or [])}",
+                "detail": item,
+            }
+        )
+
+    quality = result.get("failed_quality_checks") or raw.get("failed_quality_checks") or []
+    trace.append(
+        {
+            "phase": "Quality",
+            "stage": "stage4",
+            "status": "done" if result.get("quality_passed") else "warning",
+            "summary": (
+                "质量门禁通过"
+                if result.get("quality_passed")
+                else f"质量门禁未通过：{len(quality)}项未满足"
+            ),
+            "detail": quality,
+        }
+    )
+
+    return trace
 
 
 def _source_names(result: Dict[str, Any]) -> List[str]:
@@ -190,6 +287,9 @@ def _orchestrator_trace(result: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _format_report(question: str, result: Dict[str, Any], quality_passed: bool) -> str:
+    if result.get("seven_step_report"):
+        return str(result.get("seven_step_report"))
+
     facts = result.get("facts", []) or []
     inferences = result.get("inferences", []) or []
     uncertainty = result.get("missing_or_uncertain", []) or []
@@ -280,8 +380,7 @@ def _run_analysis(request: AnalyzeRequest) -> Dict[str, Any]:
     result = _jsonable(result)
     quality = _quality_summary(result)
     traces = _orchestrator_trace(result)
-
-    return {
+    wrapped = {
         "success": bool(result.get("success")),
         "question": question,
         "analysis_type": analysis_type,
@@ -298,12 +397,15 @@ def _run_analysis(request: AnalyzeRequest) -> Dict[str, Any]:
         "failed_quality_checks": quality["failed_quality_checks"],
         "missing_or_uncertain": result.get("missing_or_uncertain", []) or [],
         "errors": result.get("errors", []) or [],
-        "report": _format_report(question, result, quality["quality_passed"]),
         "raw": result,
         "execution_trace": traces,
         "skill_trace": traces,
         "execution_time": round(time.time() - started, 2),
     }
+    wrapped["react_trace"] = _react_trace(wrapped)
+    wrapped["report"] = _format_report(question, result, quality["quality_passed"])
+
+    return wrapped
 
 
 def _db_snapshot() -> Dict[str, Any]:
@@ -436,6 +538,8 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
 
         try:
             result = await task
+            for item in result.get("react_trace") or []:
+                yield _sse("react", item)
             yield _sse(
                 "progress",
                 {

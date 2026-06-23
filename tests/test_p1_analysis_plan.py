@@ -18,10 +18,30 @@ from executors.orchestrator import ReactState, StrategyOrchestrator, ToolResult 
 from planning.analysis_plan import build_analysis_plan  # noqa: E402
 from planning.seven_step_phases import AnalysisPhase  # noqa: E402
 from protocols.task_protocol import create_task_from_user_query  # noqa: E402
-from tools.targeted_sql_pack import build_targeted_sql_evidences  # noqa: E402
+from tools.targeted_sql_pack import build_targeted_sql_evidences, _period_from_time_range  # noqa: E402
 
 
 class P1AnalysisPlanTest(unittest.TestCase):
+    def test_analysis_plan_explicit_year_overrides_default_time_range(self) -> None:
+        task = create_task_from_user_query(
+            "分析 2026 年中国新能源乘用车市场竞争格局",
+            time_range="最近12个月",
+            entities=["新能源乘用车"],
+        )
+
+        plan = build_analysis_plan(task)
+
+        self.assertEqual(plan.time_range, "2026年")
+        self.assertEqual(plan.month_count, 12)
+        self.assertIn("2026年", plan.rag_query)
+        self.assertIn("新能源乘用车", plan.market_scope)
+
+    def test_explicit_year_maps_to_ytd_sql_window(self) -> None:
+        self.assertEqual(
+            _period_from_time_range(max_month=202602, time_range="2026年"),
+            (202601, 202602, 202501, 202502),
+        )
+
     def test_analysis_plan_normalizes_brand_and_time_range(self) -> None:
         task = create_task_from_user_query(
             "小米汽车近半年进入中国新能源SUV市场机会分析",
