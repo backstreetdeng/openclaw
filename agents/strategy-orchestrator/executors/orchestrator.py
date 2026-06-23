@@ -1,4 +1,4 @@
-﻿"""
+"""
 Strategy Orchestrator - 自主编排执行器
 
 ReAct 循环实现：
@@ -520,17 +520,37 @@ class StrategyOrchestrator:
             state.stagnation_count = 0
 
         is_stagnant = bool(previous_conf is not None and not confidence_improved)
+        # P1: Track when stagnation first started
+        if is_stagnant and state.stagnation_count == 1:
+            state.stagnation_start_cycle = state.cycle
+        elif not is_stagnant:
+            state.stagnation_start_cycle = 0
+
+        # P1 Enhancement: stagnation severity tracking and richer strategic_alert
         if is_stagnant and state.stagnation_count >= 2:
+            strategic_alert_severity = 'critical'
+            stagnation_duration = state.stagnation_count
+            conf_traj = state.confidence_trajectory[-3:] if state.confidence_trajectory else []
             strategic_alert = (
-                "连续多轮置信度无明显提升，常规补证失效；应切换证据策略，"
-                "例如从结构化 SQL 转向 RAG 深挖、历史趋势或带降级说明的部分结论。"
+                f'[CRITICAL] 连续{stagnation_duration}轮置信度无明显提升(轨迹:{conf_traj})，'
+                '常规补证失效；应立即切换证据策略，例如从结构化SQL转向RAG深挖、历史趋势或带降级说明的部分结论。'
+            )
+            pivot_recommendation = (
+                'FORCE_PIVOT: 连续补证失效，建议(1)RAG深挖上下文(2)Web搜索外部验证(3)带降级部分结论'
             )
         elif is_stagnant:
+            strategic_alert_severity = 'warning'
             strategic_alert = (
-                "本轮置信度未提升；下一轮应补充不同来源或不同口径证据，避免重复执行同类步骤。"
+                f'[WARNING] 本轮置信度未提升(stagnation={state.stagnation_count}轮)；'
+                '下一轮应补充不同来源或不同口径证据，避免重复执行同类步骤。'
+            )
+            pivot_recommendation = (
+                'WARN: 下轮补充不同来源或口径；若仍无效，触发强制切换。'
             )
         else:
-            strategic_alert = ""
+            strategic_alert_severity = 'none'
+            pivot_recommendation = ''
+            strategic_alert = ''
 
         phase_snapshot = self.phase_tracker.phase_tracker(state)
         state.confidence_trajectory.append(round(overall_conf, 4))
@@ -555,7 +575,10 @@ class StrategyOrchestrator:
             "repeated_plan": repeated_plan,
             "is_stagnant": is_stagnant,
             "stagnation_count": state.stagnation_count,
+            "stagnation_start_cycle": getattr(state, "stagnation_start_cycle", 0),
             "strategic_alert": strategic_alert,
+            "strategic_alert_severity": strategic_alert_severity,
+            "pivot_recommendation": pivot_recommendation,
             "next_phase": phase_snapshot.get("next_phase"),
             "current_phase": state.current_phase,
             "phase_requirements_met": phase_snapshot.get("phase_requirements_met", False),
