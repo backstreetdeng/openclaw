@@ -13,6 +13,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from python_wrapper.live_agent_server import _normalize_time_range, _react_trace  # noqa: E402
+from executors.orchestrator import create_orchestrator  # noqa: E402
+from evidence.evidence_ledger import Evidence  # noqa: E402
+from protocols.task_protocol import OutputFormat, TaskType, create_task_from_user_query  # noqa: E402
 
 
 class LiveBridgeRuntimeTest(unittest.TestCase):
@@ -62,6 +65,47 @@ class LiveBridgeRuntimeTest(unittest.TestCase):
         self.assertIn("Reflect", phases)
         self.assertIn("Quality", phases)
         self.assertIn("2026年", trace[0]["summary"])
+
+    def test_orchestrator_emits_live_react_events(self) -> None:
+        events = []
+        orchestrator = create_orchestrator(event_callback=events.append)
+
+        def fake_tool(param, task, state):
+            return {
+                "evidences": [
+                    Evidence(
+                        source="test-source",
+                        tool="fake-tool",
+                        claim=f"fake evidence for {param}",
+                        content="structured result",
+                        time_range="test",
+                        data_caliber="unit-test",
+                        confidence=0.8,
+                        coverage_score=0.8,
+                    )
+                ]
+            }
+
+        orchestrator.register_tool("targeted-sql-pack", fake_tool)
+        orchestrator.register_tool("nl2sql-pg", fake_tool)
+        task = create_task_from_user_query(
+            "查询测试销量",
+            target_output=OutputFormat.NATURAL_LANGUAGE,
+            time_range="最近1个月",
+            entities=[],
+        )
+        task.task_type = TaskType.SIMPLE_QUERY
+        task.max_react_cycles = 1
+
+        result = orchestrator.execute(task)
+
+        self.assertEqual(result.cycles_used, 1)
+        phases = [item["phase"] for item in events]
+        self.assertIn("Plan", phases)
+        self.assertIn("Act", phases)
+        self.assertIn("Observe", phases)
+        self.assertIn("Evidence", phases)
+        self.assertIn("Reflect", phases)
 
 
 if __name__ == "__main__":

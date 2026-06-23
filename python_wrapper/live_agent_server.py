@@ -20,7 +20,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +42,8 @@ for path in (str(RAG_ENGINE_ROOT), str(STRATEGY_ORCHESTRATOR_ROOT), str(WORKSPAC
         sys.path.insert(0, path)
 
 from market_strategy.orchestrator_integration import run_orchestrated_analysis  # noqa: E402
+from market_strategy.orchestrator_integration import create_analysis_task  # noqa: E402
+from executors.orchestrator import create_orchestrator  # noqa: E402
 from quality.quality_gate import get_quality_gate  # noqa: E402
 
 
@@ -363,20 +365,89 @@ def _format_report(question: str, result: Dict[str, Any], quality_passed: bool) 
     return "\n".join(lines)
 
 
-def _run_analysis(request: AnalyzeRequest) -> Dict[str, Any]:
+def _run_orchestrated_analysis(
+    query: str,
+    time_range: str,
+    entities: List[str],
+    analysis_type: str,
+    max_cycles: int,
+    event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
+    """Run strategy-orchestrator, optionally streaming its live ReAct events."""
+    if event_callback is None:
+        return run_orchestrated_analysis(
+            query=query,
+            time_range=time_range,
+            entities=entities,
+            analysis_type=analysis_type,
+            max_cycles=max_cycles,
+        )
+
+    task = create_analysis_task(
+        query=query,
+        time_range=time_range,
+        entities=entities,
+        analysis_type=analysis_type,
+    )
+    task.max_react_cycles = max_cycles
+    orchestrator = create_orchestrator(event_callback=event_callback)
+    result = orchestrator.execute(task)
+    return {
+        "success": result.success,
+        "user_intent": result.user_intent,
+        "analysis_plan": result.analysis_plan,
+        "answer": result.answer,
+        "facts": result.facts,
+        "inferences": result.inferences,
+        "confidence": result.confidence,
+        "confidence_details": result.confidence_details,
+        "evidence_sources": result.evidence_sources,
+        "evidence_ledger": result.evidence_ledger,
+        "evidence_store": result.evidence_store,
+        "seven_step_report": result.seven_step_report,
+        "insight_cards": result.insight_cards,
+        "reflection": result.reflection,
+        "replan_history": result.replan_history,
+        "quality_passed": result.quality_passed,
+        "quality_summary": result.quality_summary,
+        "failed_quality_checks": result.failed_quality_checks,
+        "recommendations": result.recommendations,
+        "risks": result.risks,
+        "missing_or_uncertain": result.missing_or_uncertain,
+        "next_steps": result.next_steps,
+        "errors": result.errors,
+        "stop_reason": result.stop_reason,
+        "cycles_used": result.cycles_used,
+    }
+
+
+def _run_analysis(
+    request: AnalyzeRequest,
+    event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
     question = request.question.strip()
     started = time.time()
     analysis_type = request.analysis_type or _infer_analysis_type(question)
     time_range = _normalize_time_range(question, request.time_range)
     entities = _infer_entities(question)
 
-    result = run_orchestrated_analysis(
-        query=question,
-        time_range=time_range,
-        entities=entities,
-        analysis_type=analysis_type,
-        max_cycles=request.max_cycles,
-    )
+    if event_callback is None:
+        result = run_orchestrated_analysis(
+            query=question,
+            time_range=time_range,
+            entities=entities,
+            analysis_type=analysis_type,
+            max_cycles=request.max_cycles,
+        )
+    else:
+        result = _run_orchestrated_analysis(
+            query=question,
+            time_range=time_range,
+            entities=entities,
+            analysis_type=analysis_type,
+            max_cycles=request.max_cycles,
+            event_callback=event_callback,
+        )
     result = _jsonable(result)
     quality = _quality_summary(result)
     traces = _orchestrator_trace(result)
@@ -507,10 +578,18 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
             },
         )
 
-        task = asyncio.create_task(asyncio.to_thread(_run_analysis, request))
+        event_queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        live_event_count = 0
+
+        def emit_live_event(event: Dict[str, Any]) -> None:
+            loop.call_soon_threadsafe(event_queue.put_nowait, event)
+
+        task = asyncio.create_task(
+            asyncio.to_thread(_run_analysis, request, event_callback=emit_live_event)
+        )
         beat = 0
         while not task.done():
-            beat += 1
             elapsed = time.time() - start
             if elapsed > ANALYSIS_TIMEOUT_SECONDS:
                 task.cancel()
@@ -524,22 +603,35 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
                     },
                 )
                 return
-            yield _sse(
-                "progress",
-                {
-                    "stage": "stage3",
-                    "stage_name": "ReAct 编排中",
-                    "status": "running",
-                    "summary": f"strategy-orchestrator 正在 Plan/Act/Observe/Reflect；已用 {round(time.time() - start, 1)}s。",
-                    "heartbeat": beat,
-                },
-            )
-            await asyncio.sleep(2)
+            try:
+                event = await asyncio.wait_for(event_queue.get(), timeout=2)
+                live_event_count += 1
+                yield _sse("react", event)
+            except asyncio.TimeoutError:
+                beat += 1
+                yield _sse(
+                    "progress",
+                    {
+                        "stage": "stage3",
+                        "stage_name": "ReAct 编排中",
+                        "status": "running",
+                        "summary": (
+                            "等待当前工具返回；"
+                            f"已用 {round(time.time() - start, 1)}s，"
+                            f"已收到 {live_event_count} 条实时执行事件。"
+                        ),
+                        "heartbeat": beat,
+                    },
+                )
 
         try:
+            while not event_queue.empty():
+                live_event_count += 1
+                yield _sse("react", event_queue.get_nowait())
             result = await task
-            for item in result.get("react_trace") or []:
-                yield _sse("react", item)
+            if live_event_count == 0:
+                for item in result.get("react_trace") or []:
+                    yield _sse("react", item)
             yield _sse(
                 "progress",
                 {

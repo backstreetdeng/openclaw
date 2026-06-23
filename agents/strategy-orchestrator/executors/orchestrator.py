@@ -176,15 +176,42 @@ class StrategyOrchestrator:
     5. 处理回退逻辑
     """
     
-    def __init__(self):
+    def __init__(self, event_callback: Optional[Callable[[Dict[str, Any]], None]] = None):
         self.evidence_ledger = get_evidence_ledger()
         self.quality_gate = get_quality_gate()
         self.rollback_handler = get_rollback_handler()
         self.phase_tracker = PhaseTracker()
+        self.event_callback = event_callback
         
         # 工具注册表
         self._tools: Dict[str, Callable] = {}
         self._register_default_tools()
+
+    def _emit_event(
+        self,
+        phase: str,
+        stage: str,
+        status: str,
+        summary: str,
+        detail: Any = None,
+        **extra: Any,
+    ) -> None:
+        """Emit a bounded execution event for live UI streaming."""
+        if not self.event_callback:
+            return
+        event = {
+            "phase": phase,
+            "stage": stage,
+            "status": status,
+            "summary": summary,
+            "detail": detail,
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+        }
+        event.update(extra)
+        try:
+            self.event_callback(event)
+        except Exception:
+            logger.exception("orchestrator event callback failed")
     
     @property
     def tool_registry(self):
@@ -244,12 +271,37 @@ class StrategyOrchestrator:
         # 初始化 ReAct 状态
         state = ReactState()
         state.analysis_plan = build_analysis_plan(task)
+        self._emit_event(
+            "Plan",
+            "stage2",
+            "done",
+            (
+                "已形成统一分析计划："
+                f"市场={state.analysis_plan.market_scope}；"
+                f"时间={state.analysis_plan.time_range}；"
+                f"品牌={state.analysis_plan.target_brand or '未指定'}；"
+                f"价格带={state.analysis_plan.price_band or '未指定'}"
+            ),
+            detail=state.analysis_plan.to_dict() if hasattr(state.analysis_plan, "to_dict") else state.analysis_plan,
+        )
         
         # 执行 ReAct 循环
         result = self._run_react_loop(task, state)
         
         # 质量检查
+        self._emit_event("Quality", "stage4", "running", "正在执行质量门禁和证据完整性检查")
         result = self._apply_quality_gate(result)
+        self._emit_event(
+            "Quality",
+            "stage4",
+            "done" if result.quality_passed else "warning",
+            (
+                "质量门禁通过"
+                if result.quality_passed
+                else f"质量门禁未通过：{len(result.failed_quality_checks or [])} 项需要关注"
+            ),
+            detail=result.failed_quality_checks,
+        )
         
         logger.info(f"Orchestration complete: {result.task_id}, cycles={result.cycles_used}")
         
@@ -274,14 +326,36 @@ class StrategyOrchestrator:
         while state.cycle < max_cycles and not state.should_stop:
             state.cycle += 1
             logger.info(f"Cycle {state.cycle}/{max_cycles}")
+            self._emit_event(
+                "Cycle",
+                "stage3",
+                "running",
+                f"开始第 {state.cycle}/{max_cycles} 轮 ReAct：准备规划下一批工具调用",
+                cycle=state.cycle,
+            )
             
             # ===== Plan =====
             plan = self._plan(task, state)
             state.current_plan = plan
             logger.info(f"Plan: {plan}")
+            self._emit_event(
+                "Plan",
+                "stage3",
+                "done" if plan else "warning",
+                "本轮计划：" + ("、".join(plan) if plan else "反思后没有新的可执行步骤"),
+                detail={"cycle": state.cycle, "plan": plan},
+                cycle=state.cycle,
+            )
             if not plan:
                 state.should_stop = True
                 state.stop_reason = "No further steps after reflection"
+                self._emit_event(
+                    "Stop",
+                    "stage4",
+                    "warning",
+                    state.stop_reason,
+                    cycle=state.cycle,
+                )
                 break
             
             # ===== Act =====
@@ -289,8 +363,38 @@ class StrategyOrchestrator:
                 if state.should_stop:
                     break
                 
+                self._emit_event(
+                    "Act",
+                    "stage3",
+                    "running",
+                    f"正在调用工具：{step}",
+                    detail={"cycle": state.cycle, "step": step},
+                    cycle=state.cycle,
+                )
                 tool_result = self._execute_step(step, task, state)
                 state.tool_results.append(tool_result)
+                evidence_count = len(tool_result.evidences or []) + (1 if tool_result.evidence else 0)
+                self._emit_event(
+                    "Observe",
+                    "stage3",
+                    "done" if tool_result.success else "warning",
+                    (
+                        f"{step} 返回："
+                        f"{'成功' if tool_result.success else '失败'}；"
+                        f"耗时 {tool_result.execution_time:.1f}s；"
+                        f"新增证据 {evidence_count} 条"
+                    ),
+                    detail={
+                        "cycle": state.cycle,
+                        "step": step,
+                        "tool": tool_result.tool_name,
+                        "success": tool_result.success,
+                        "error": tool_result.error,
+                        "execution_time": round(tool_result.execution_time, 3),
+                        "evidence_count": evidence_count,
+                    },
+                    cycle=state.cycle,
+                )
                 
                 # 记录证据
                 evidences_to_add = list(tool_result.evidences or [])
@@ -314,6 +418,24 @@ class StrategyOrchestrator:
                         confidence=evidence.confidence,
                         limitations=evidence.limitations
                     )
+                    self._emit_event(
+                        "Evidence",
+                        "stage3",
+                        "done",
+                        f"证据入账：[{evidence.source}/{evidence.tool}] {evidence.claim}",
+                        detail={
+                            "cycle": state.cycle,
+                            "source": evidence.source,
+                            "tool": evidence.tool,
+                            "claim": evidence.claim,
+                            "confidence": evidence.confidence,
+                            "time_range": evidence.time_range,
+                            "data_caliber": evidence.data_caliber,
+                            "source_url": evidence.source_url,
+                            "source_grade": evidence.source_grade,
+                        },
+                        cycle=state.cycle,
+                    )
                 
                 # 记录已完成步骤
                 state.completed_steps.append(step)
@@ -325,6 +447,20 @@ class StrategyOrchestrator:
             
             # ===== Observe & Reflect =====
             self._observe_and_reflect(task, state)
+            self._emit_event(
+                "Reflect",
+                "stage4",
+                "done" if not state.reflection.get("is_stagnant") else "warning",
+                (
+                    f"第 {state.cycle} 轮反思："
+                    f"置信度 {float(state.reflection.get('overall_confidence') or 0):.1%}；"
+                    f"新增证据 {state.reflection.get('new_evidence_count', 0)} 条；"
+                    f"缺口 {len(state.reflection.get('evidence_gaps') or [])} 项；"
+                    f"冲突 {len(state.reflection.get('conflicts') or [])} 项"
+                ),
+                detail=state.reflection,
+                cycle=state.cycle,
+            )
 
             # ===== Seven-step phase tracking =====
             self.run_phase(state.current_phase, task, state)
@@ -332,11 +468,37 @@ class StrategyOrchestrator:
             # ===== Re-plan =====
             if not state.should_stop:
                 self._replan(task, state)
+                last_replan = state.replan_history[-1] if state.replan_history else None
+                if last_replan and last_replan.get("cycle") == state.cycle:
+                    self._emit_event(
+                        "Re-plan",
+                        "stage4",
+                        "running",
+                        f"基于反思重规划：{last_replan.get('reason')} -> {', '.join(last_replan.get('next_plan') or [])}",
+                        detail=last_replan,
+                        cycle=state.cycle,
+                    )
+                else:
+                    self._emit_event(
+                        "Re-plan",
+                        "stage4",
+                        "done",
+                        "当前证据状态无需新增重规划步骤",
+                        cycle=state.cycle,
+                    )
         
         if not state.stop_reason and state.cycle >= max_cycles and not state.is_complete:
             state.stop_reason = "Max cycles reached"
+            self._emit_event(
+                "Stop",
+                "stage4",
+                "warning",
+                state.stop_reason,
+                cycle=state.cycle,
+            )
         
         # ===== 构建结果 =====
+        self._emit_event("Report", "stage5", "running", "正在汇总证据账本并生成业务报告")
         return self._build_result(task, state)
     
     def _plan(
@@ -1922,16 +2084,19 @@ class StrategyOrchestrator:
         )
 
 
-def create_orchestrator() -> StrategyOrchestrator:
+def create_orchestrator(
+    event_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+) -> StrategyOrchestrator:
     """创建编排器实例"""
-    return StrategyOrchestrator()
+    return StrategyOrchestrator(event_callback=event_callback)
 
 
 def orchestrate_task(
     query: str,
     time_range: str = "最近12个月",
     entities: List[str] = None,
-    target_output: OutputFormat = OutputFormat.NATURAL_LANGUAGE
+    target_output: OutputFormat = OutputFormat.NATURAL_LANGUAGE,
+    event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> OrchestrationResult:
     """
     便捷函数：直接编排用户查询
@@ -1947,7 +2112,7 @@ def orchestrate_task(
     )
     
     # 执行编排
-    orchestrator = create_orchestrator()
+    orchestrator = create_orchestrator(event_callback=event_callback)
     result = orchestrator.execute(task)
     
     return result
