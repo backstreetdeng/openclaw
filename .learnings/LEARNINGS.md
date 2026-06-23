@@ -6,6 +6,32 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260623-003] correction
+**Logged**: 2026-06-23T17:25:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: architecture/framework-selection
+
+### Summary
+DeerFlow 和 LangGraph 不是并列关系，而是嵌套关系（DeerFlow ⊃ LangGraph）。架构文档错误写成"DeerFlow + LangGraph 双轨"，已被老大纠正。
+
+### Details
+- 错误表述："DeerFlow + LangGraph 双轨"
+- 正确关系：DeerFlow 内部已基于 LangGraph，LangGraph 是 DeerFlow 的内置编排引擎，选 DeerFlow 就附带了 LangGraph
+- 影响文档：《汽车市场AI智能体架构设计-垂直领域方案-20260623.md》第八章
+
+### Suggested Action
+1. 技术选型结论必须先查证官方文档再写入正式文档
+2. 已更新架构文档：在 8.1 节添加修正说明，更新框架决策表格
+3. 框架关系描述不能凭直觉判断，需交叉验证
+
+### Metadata
+- Source: user_feedback
+- Related Files: E:\openclaw\knowledge\MyVault\文档\汽车市场AI智能体架构设计-垂直领域方案-20260623.md
+- Tags: architecture, deerflow, langgraph, framework-selection, correction
+
+---
+
 ## [LRN-20260623-002] correction
 **Logged**: 2026-06-23T09:05:00+08:00
 **Priority**: high
@@ -362,3 +388,29 @@ Corrections, insights, and knowledge gaps captured during development.
 - Source: user_feedback
 - Related Files: C:\Users\11489\.openclaw\workspace\skills\technical-business-strategy-analysis\SKILL.md, python_wrapper/live_agent_server.py
 - Tags: business-strategy-analysis, seven-step-method, report-quality, automotive-agent
+
+---
+
+## [LRN-20260623-003] best_practice
+**Logged**: 2026-06-23T09:30:00+08:00
+**Priority**: high
+**Status**: pending
+
+### Summary
+新开发完成后必须立即 commit + push + 存档到当日 memory，不依赖用户提醒。
+
+### Details
+用户要求：每次完成新开发功能后，立即执行 git commit + push，同时将新开发内容摘要存档到 memory/YYYY-MM-DD.md。无需用户提醒，主动执行。
+
+规则已写入 MEMORY.md 第6条强制规则。
+
+### Suggested Action
+1. 每次完成新功能后，按照 MEMORY.md 规则6执行：精确 git add → commit → push → 存档到当日 memory
+2. commit message 格式：<阶段>: <简短描述>
+3. push 失败时记录 commit hash 到 memory 并告知用户
+
+### Metadata
+- Source: user_feedback
+- Related Files: MEMORY.md
+- Tags: git-workflow, new-development, commit-push-archive
+

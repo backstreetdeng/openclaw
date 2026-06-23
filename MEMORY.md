@@ -118,6 +118,13 @@
      - `git config --global http.proxy http://127.0.0.1:7897`
      - `git config --global https.proxy http://127.0.0.1:7897`
    - commit 后必须 `git push`；若 push 失败，要告知 commit hash 和失败原因，并记录可恢复信息。
+### 6. 新开发完成后标准流程（2026-06-23 补充）
+   - 完成新功能开发后，立即执行 git commit + push，不等用户提醒。
+   - 提交范围只限本轮相关文件，用 git add <path> 精确指定，不 git add .。
+   - commit message 格式：<阶段>: <简短描述>（例：P3: add four-factor confidence model）
+   - commit 后立即 push；若 push 失败，记录本地 commit hash 到 memory/当日.md，并告知用户。
+   - 同时将新开发内容摘要追加到 memory/YYYY-MM-DD.md，格式：### HH:MM 新开发存档
+
 
 ## 目录结构
 - .learnings/ - 自我成长记录（LEARNINGS.md, ERRORS.md, FEATURE_REQUESTS.md）
