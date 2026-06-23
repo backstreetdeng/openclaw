@@ -53,6 +53,7 @@ class QualityGate:
             self._check_answer_relevance,
             self._check_scope_clarity,
             self._check_source_citation,
+            self._check_answer_strategy_evidence_requirements,
             self._check_evidence_ledger_output,
             self._check_data_caliber_and_time_range,
             self._check_fact_inference_separation,
@@ -231,6 +232,73 @@ class QualityGate:
                 level=QualityLevel.POOR,
                 message="证据来源不明确"
             )
+
+    def _check_answer_strategy_evidence_requirements(self, result: Dict[str, Any]) -> QualityCheckResult:
+        """检查: answer strategy 必需证据是否满足。"""
+        plan = result.get("analysis_plan") or {}
+        strategy = plan.get("answer_strategy") or {}
+        if not strategy:
+            return QualityCheckResult(
+                check_name="answer_strategy_evidence_requirements",
+                passed=True,
+                level=QualityLevel.ACCEPTABLE,
+                message="未写入 answer strategy，跳过策略证据检查"
+            )
+
+        is_market_structure = (
+            strategy.get("subject_kind") == "market"
+            and not strategy.get("is_target_specific")
+            and any("竞争" in str(item) or "Top品牌" in str(item) for item in strategy.get("must_answer", []))
+        )
+        if not is_market_structure:
+            return QualityCheckResult(
+                check_name="answer_strategy_evidence_requirements",
+                passed=True,
+                level=QualityLevel.GOOD,
+                message="当前 answer strategy 不要求市场竞争结构专项证据"
+            )
+
+        store = result.get("evidence_store") or {}
+        d_items = store.get("D") or []
+        r_items = store.get("R") or []
+        w_items = store.get("W") or []
+        has_competitor_share = any("competitor_share" in str(item) for item in d_items)
+        missing = []
+        if not has_competitor_share:
+            missing.append("缺少 Top品牌/企业份额结构化证据")
+        if len(r_items) < 2:
+            missing.append("RAG 行业/战略文档补证少于 2 条")
+        if not w_items:
+            missing.append("缺少外部网页/实时公开来源补证")
+
+        if missing:
+            return QualityCheckResult(
+                check_name="answer_strategy_evidence_requirements",
+                passed=False,
+                level=QualityLevel.ACCEPTABLE,
+                message="answer strategy 必需证据未满足: " + "；".join(missing),
+                details={
+                    "missing": missing,
+                    "answer_strategy": strategy,
+                    "evidence_counts": {
+                        "D": len(d_items),
+                        "R": len(r_items),
+                        "W": len(w_items),
+                    },
+                },
+                suggestions=[
+                    "补齐竞品份额、RAG行业文档和外部公开来源后再提升为质量通过",
+                    "若外部来源不可用，应将报告显式降级为待验证分析",
+                ],
+            )
+
+        return QualityCheckResult(
+            check_name="answer_strategy_evidence_requirements",
+            passed=True,
+            level=QualityLevel.EXCELLENT,
+            message="answer strategy 要求的竞争结构证据已满足",
+            details={"evidence_counts": {"D": len(d_items), "R": len(r_items), "W": len(w_items)}}
+        )
     
     def _check_fact_inference_separation(self, result: Dict[str, Any]) -> QualityCheckResult:
         """检查4: 是否区分了事实和推断"""

@@ -7,6 +7,7 @@ if str(ORCH_ROOT) not in sys.path:
     sys.path.insert(0, str(ORCH_ROOT))
 from evidence.evidence_ledger import Evidence, EvidenceLedger
 from executors.orchestrator import StrategyOrchestrator
+from planning.analysis_plan import build_analysis_plan
 from protocols.task_protocol import create_task_from_user_query
 from quality.quality_gate import get_quality_gate
 from tools.targeted_sql_pack import build_targeted_sql_evidences
@@ -86,6 +87,55 @@ class P3ReportQualityTest(unittest.TestCase):
         passed, checks = get_quality_gate().run_all(result)
         failed = [item.check_name for item in checks if not item.passed]
         self.assertTrue(passed, failed)
+
+    def test_market_competition_strategy_fails_without_external_evidence(self):
+        task = create_task_from_user_query(
+            "分析 2026 年中国新能源乘用车市场竞争格局",
+            time_range="最近12个月",
+            entities=["新能源乘用车"],
+        )
+        plan = build_analysis_plan(task).to_dict()
+        result = {
+            "user_intent": task.user_intent.to_dict(),
+            "analysis_plan": plan,
+            "answer": "分析 2026年 新能源乘用车 市场竞争格局，包含D1竞品份额和CR3。",
+            "facts": [{"claim": "market size", "content": "868726 units",
+                       "source": "nl2sql-pg", "time_range": "2026年",
+                       "data_caliber": "targeted_sql_pack", "confidence": 0.8,
+                       "evidence": {"evidence_id": "D1"}}],
+            "inferences": [{"claim": "competition remains fragmented",
+                            "source": "analysis-framework", "confidence": 0.65,
+                            "evidence": {"evidence_id": "D2"}}],
+            "confidence": 0.749,
+            "confidence_details": {"data_coverage_factor": 0.868, "rag_coverage_factor": 0.539,
+                                   "source_credibility_factor": 0.793, "conflict_factor": 1.0},
+            "evidence_sources": [
+                {"source": "nl2sql-pg", "tool": "targeted_sql_pack",
+                 "claim": "targeted_sql_pack/competitor_share", "time_range": "2026年",
+                 "data_caliber": "targeted_sql_pack; period=202601 - 202602"},
+                {"source": "rag", "tool": "fake_vector",
+                 "claim": "RAG industry report", "time_range": "2026年",
+                 "data_caliber": "vector retrieval"},
+            ],
+            "evidence_store": {
+                "D": [{"id": "D1", "claim": "targeted_sql_pack/competitor_share",
+                       "content": "block=competitor_share; sample=[]",
+                       "data_caliber": "targeted_sql_pack; period=202601 - 202602"}],
+                "R": [{"id": "R1", "claim": "RAG industry report"}],
+                "W": [],
+                "A": [],
+            },
+            "evidence_ledger": {"summary": {"overall_confidence": 0.749},
+                                "evidences": [{"evidence_id": "D1"}, {"evidence_id": "R1"}]},
+            "missing_or_uncertain": [],
+            "next_steps": ["补充外部网页来源"],
+        }
+
+        passed, checks = get_quality_gate().run_all(result)
+        failed = [item.check_name for item in checks if not item.passed]
+
+        self.assertFalse(passed)
+        self.assertIn("answer_strategy_evidence_requirements", failed)
 
     def test_orchestrator_p3_quality_payload(self):
         orchestrator = StrategyOrchestrator()
