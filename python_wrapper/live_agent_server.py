@@ -15,12 +15,15 @@ from __future__ import annotations
 import asyncio
 import html
 import json
+import os
 import re
 import sys
 import time
 import traceback
+import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -79,10 +82,20 @@ ENTRY_ROUTE_HELP_MARKERS = (
     "帮助", "help", "你好", "您好", "hi", "hello", "hey", "在吗",
 )
 
+ENTRY_ROUTE_SKILL_MARKERS = (
+    "有哪些skill", "有什么skill", "有哪些技能", "有什么技能", "skill列表", "技能列表",
+    "可用skill", "可用技能", "安装了哪些skill", "装了哪些skill", "skills",
+)
+
+ENTRY_ROUTE_USER_INSIGHT_MARKERS = (
+    "用户洞察", "用户画像", "用户分层", "用户需求", "用户偏好", "用户旅程",
+    "人群画像", "客群画像", "消费者洞察", "购车人群", "目标用户", "目标客群",
+)
+
 ENTRY_ROUTE_ANALYSIS_MARKERS = (
     "分析", "研究", "评估", "预测", "判断", "对比", "比较", "竞品", "竞争", "格局",
     "市场", "销量", "销售", "份额", "市占", "趋势", "政策", "机会", "风险",
-    "价格", "价格带", "定位", "配置", "产品", "渠道", "用户", "舆情", "口碑",
+    "价格", "价格带", "定位", "配置", "产品", "渠道", "舆情", "口碑",
     "同比", "环比", "增速", "增长", "下滑", "集中度", "出口", "补贴", "购置税",
     "报告", "策略", "战略", "建议", "复盘", "洞察", "结论", "置信度",
 )
@@ -94,16 +107,33 @@ ENTRY_ROUTE_DOMAIN_MARKERS = (
     "轿车", "车型", "品牌", "车企", "汽车", "车市", "15-20万", "20万",
 )
 
+DIRECT_ROUTES = {"capability_help", "skill_inventory", "general_chat", "user_insight"}
+ALLOWED_LLM_PLAN_PREFIXES = {
+    "targeted-sql-pack",
+    "nl2sql-pg",
+    "rag",
+    "pg-vector-search",
+    "web-search",
+    "analysis-framework",
+    "competitor-analyst",
+    "cost-analyst",
+    "report-generator",
+    "report-generator-agent",
+    "phase-tracker",
+}
+
 
 def _classify_entry_route(question: str) -> Dict[str, Any]:
-    """Classify whether the entry question should run market orchestration."""
+    """Classify the frontend entry route before any tool orchestration."""
     normalized = re.sub(r"\s+", "", (question or "").strip().lower())
     if not normalized:
         return {
-            "route": "direct_response",
+            "route": "general_chat",
             "confidence": 1.0,
             "reason": "empty_question",
             "help_hits": [],
+            "skill_hits": [],
+            "user_insight_hits": [],
             "analysis_hits": [],
             "domain_hits": [],
         }
@@ -111,6 +141,32 @@ def _classify_entry_route(question: str) -> Dict[str, Any]:
     analysis_hits = [marker for marker in ENTRY_ROUTE_ANALYSIS_MARKERS if marker.lower() in normalized]
     domain_hits = [marker for marker in ENTRY_ROUTE_DOMAIN_MARKERS if marker.lower() in normalized]
     help_hits = [marker for marker in ENTRY_ROUTE_HELP_MARKERS if marker.lower() in normalized]
+    skill_hits = [marker for marker in ENTRY_ROUTE_SKILL_MARKERS if marker.lower() in normalized]
+    user_insight_hits = [marker for marker in ENTRY_ROUTE_USER_INSIGHT_MARKERS if marker.lower() in normalized]
+
+    if skill_hits:
+        return {
+            "route": "skill_inventory",
+            "confidence": min(0.98, 0.8 + 0.04 * len(skill_hits)),
+            "reason": "skill_inventory_signal",
+            "help_hits": help_hits,
+            "skill_hits": skill_hits,
+            "user_insight_hits": user_insight_hits,
+            "analysis_hits": analysis_hits,
+            "domain_hits": domain_hits,
+        }
+
+    if user_insight_hits and not domain_hits:
+        return {
+            "route": "user_insight",
+            "confidence": min(0.96, 0.78 + 0.04 * len(user_insight_hits)),
+            "reason": "user_insight_signal",
+            "help_hits": help_hits,
+            "skill_hits": skill_hits,
+            "user_insight_hits": user_insight_hits,
+            "analysis_hits": analysis_hits,
+            "domain_hits": domain_hits,
+        }
 
     # Analysis/domain evidence wins over help phrasing. Example:
     # "你能帮我分析比亚迪最近12个月市场策略吗" must run the orchestrator.
@@ -120,35 +176,43 @@ def _classify_entry_route(question: str) -> Dict[str, Any]:
             "confidence": min(0.98, 0.72 + 0.05 * (len(analysis_hits) + len(domain_hits))),
             "reason": "market_analysis_signal",
             "help_hits": help_hits,
+            "skill_hits": skill_hits,
+            "user_insight_hits": user_insight_hits,
             "analysis_hits": analysis_hits,
             "domain_hits": domain_hits,
         }
 
     if help_hits:
         return {
-            "route": "direct_response",
+            "route": "capability_help",
             "confidence": min(0.98, 0.74 + 0.04 * len(help_hits)),
             "reason": "help_or_capability_signal",
             "help_hits": help_hits,
+            "skill_hits": skill_hits,
+            "user_insight_hits": user_insight_hits,
             "analysis_hits": analysis_hits,
             "domain_hits": domain_hits,
         }
 
     if len(normalized) <= 8:
         return {
-            "route": "direct_response",
+            "route": "general_chat",
             "confidence": 0.62,
             "reason": "short_non_market_query",
             "help_hits": help_hits,
+            "skill_hits": skill_hits,
+            "user_insight_hits": user_insight_hits,
             "analysis_hits": analysis_hits,
             "domain_hits": domain_hits,
         }
 
     return {
-        "route": "direct_response",
+        "route": "general_chat",
         "confidence": 0.55,
         "reason": "no_market_analysis_signal",
         "help_hits": help_hits,
+        "skill_hits": skill_hits,
+        "user_insight_hits": user_insight_hits,
         "analysis_hits": analysis_hits,
         "domain_hits": domain_hits,
     }
@@ -156,43 +220,261 @@ def _classify_entry_route(question: str) -> Dict[str, Any]:
 
 def _is_direct_response_query(question: str) -> bool:
     """Return True for questions that should be answered without orchestration."""
-    return _classify_entry_route(question)["route"] == "direct_response"
+    return _classify_entry_route(question)["route"] in DIRECT_ROUTES
 
 
-def _direct_response_payload(question: str, route_decision: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    route_decision = route_decision or _classify_entry_route(question)
-    report = "\n".join(
+def _installed_skill_inventory() -> List[Dict[str, str]]:
+    """Read the workspace skill inventory from local skill folders."""
+    skills_dir = WORKSPACE_ROOT / "skills"
+    items: List[Dict[str, str]] = []
+    if not skills_dir.exists():
+        return items
+
+    for skill_dir in sorted(path for path in skills_dir.iterdir() if path.is_dir()):
+        skill_md = skill_dir / "SKILL.md"
+        description = ""
+        if skill_md.exists():
+            try:
+                for line in skill_md.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#") or stripped in {"---"}:
+                        continue
+                    if stripped.lower().startswith("description:"):
+                        description = stripped.split(":", 1)[1].strip().strip('"')
+                        break
+                    description = stripped[:120]
+                    break
+            except Exception:
+                description = ""
+        items.append(
+            {
+                "name": skill_dir.name,
+                "description": description or "本地 skill，详情见 SKILL.md",
+                "path": str(skill_md if skill_md.exists() else skill_dir),
+            }
+        )
+    return items
+
+
+def _call_openai_compatible_chat(messages: Sequence[Dict[str, str]], *, max_tokens: int = 700) -> Dict[str, Any]:
+    """Small OpenAI-compatible chat client used only when explicitly configured."""
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("MARKET_LLM_API_KEY")
+    if not api_key:
+        return {"ok": False, "error": "missing OPENAI_API_KEY or MARKET_LLM_API_KEY"}
+
+    base_url = (os.environ.get("OPENAI_BASE_URL") or os.environ.get("MARKET_LLM_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
+    model = os.environ.get("MARKET_LLM_MODEL") or os.environ.get("OPENAI_MODEL") or "gpt-4o-mini"
+    payload = {
+        "model": model,
+        "messages": list(messages),
+        "temperature": 0.2,
+        "max_tokens": max_tokens,
+    }
+    request = urllib.request.Request(
+        f"{base_url}/chat/completions",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    timeout = float(os.environ.get("MARKET_LLM_TIMEOUT", "12"))
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        return {"ok": bool(text), "text": text, "model": model, "base_url": base_url}
+    except (urllib.error.URLError, TimeoutError, ValueError, KeyError) as exc:
+        return {"ok": False, "error": str(exc), "model": model, "base_url": base_url}
+
+
+def _extract_json_object(text: str) -> Dict[str, Any]:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r"```$", "", cleaned).strip()
+    try:
+        data = json.loads(cleaned)
+        return data if isinstance(data, dict) else {}
+    except ValueError:
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if not match:
+            return {}
+        try:
+            data = json.loads(match.group(0))
+            return data if isinstance(data, dict) else {}
+        except ValueError:
+            return {}
+
+
+def _validate_llm_plan_steps(steps: Sequence[Any]) -> List[str]:
+    valid: List[str] = []
+    for raw_step in steps:
+        step = str(raw_step or "").strip()
+        if not step or ":" not in step:
+            continue
+        prefix, param = step.split(":", 1)
+        prefix = prefix.strip()
+        param = param.strip()
+        if prefix not in ALLOWED_LLM_PLAN_PREFIXES or not param:
+            continue
+        normalized = f"{prefix}:{param}"
+        if normalized not in valid:
+            valid.append(normalized)
+
+    prefixes = {step.split(":", 1)[0] for step in valid}
+    if valid and "analysis-framework" not in prefixes:
+        valid.append("analysis-framework:automotive_strategy_seven_stage")
+    if valid and "report-generator-agent" not in prefixes:
+        valid.append("report-generator-agent:quality_review")
+    return valid[:8]
+
+
+def _llm_plan_provider(context: Dict[str, Any]) -> List[str]:
+    """Bounded LLM planner for strategy-orchestrator.
+
+    It returns only validated tool steps. If no LLM is configured or parsing
+    fails, the orchestrator falls back to the Skill-guided planner.
+    """
+    if str(os.environ.get("MARKET_LLM_PLANNER", "1")).lower() in {"0", "false", "no", "off"}:
+        return []
+
+    allowed = ", ".join(sorted(ALLOWED_LLM_PLAN_PREFIXES))
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是汽车市场 strategy-orchestrator 的 LLM planner。"
+                "只输出 JSON，不要输出解释。JSON schema: "
+                '{"steps":["tool:param"],"reason":"...","confidence":0.0}. '
+                f"允许的 tool 前缀只有：{allowed}。"
+                "必须根据问题和已完成步骤选择下一轮 ReAct 工具；不要编造不存在的工具。"
+                "复杂汽车市场问题通常至少需要结构化数据、RAG/外部验证、automotive_strategy_seven_stage 框架和质量复核。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "raw_query": context.get("raw_query"),
+                    "task_type": context.get("task_type"),
+                    "time_range": context.get("time_range"),
+                    "entities": context.get("entities"),
+                    "analysis_plan": context.get("analysis_plan"),
+                    "completed_steps": context.get("completed_steps"),
+                    "evidence_gaps": context.get("evidence_gaps"),
+                    "stage_contract": [
+                        "problem_definition",
+                        "path_design",
+                        "data_collection",
+                        "data_validation",
+                        "framework_analysis",
+                        "insight_synthesis",
+                        "quality_review",
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+        },
+    ]
+    response = _call_openai_compatible_chat(messages, max_tokens=500)
+    if not response.get("ok"):
+        return []
+    payload = _extract_json_object(str(response.get("text") or ""))
+    return _validate_llm_plan_steps(payload.get("steps") or [])
+
+
+def _direct_llm_answer(question: str) -> Dict[str, Any]:
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是汽车市场战略分析师的前端对话入口。当前问题没有明确市场分析信号，"
+                "请直接回答用户问题。不要调用或声称调用 SQL、RAG、Web 或 strategy-orchestrator。"
+            ),
+        },
+        {"role": "user", "content": question},
+    ]
+    return _call_openai_compatible_chat(messages, max_tokens=500)
+
+
+def _direct_response_report(question: str, route_decision: Dict[str, Any]) -> str:
+    route = route_decision.get("route")
+    if route == "skill_inventory":
+        skills = _installed_skill_inventory()
+        lines = ["## 当前可用 Skills", ""]
+        if not skills:
+            lines.append("当前工作空间没有发现 `skills/` 下的本地 skill。")
+        else:
+            for item in skills:
+                lines.append(f"- `{item['name']}`：{item['description']}")
+        lines += [
+            "",
+            "说明：市场战略分析问题会进入 `strategy-orchestrator`，再由它按证据需求调用 SQL、RAG、Web 和专业分析 Skill。",
+        ]
+        return "\n".join(lines)
+
+    if route == "user_insight":
+        return "\n".join(
+            [
+                "## 用户洞察路由",
+                "",
+                "这个问题已识别为用户洞察类，不会误进入市场战略分析链路。",
+                "",
+                "当前工作空间还没有独立的 `user-insight` 专用 skill 或 agent 接入前端，所以本次不会调用 SQL、RAG、Web 或 `automotive-strategy-analysis`。",
+                "下一步应接入独立的用户洞察能力，用于处理用户画像、用户分层、偏好、旅程和需求洞察。",
+            ]
+        )
+
+    if route == "general_chat":
+        llm_result = _direct_llm_answer(question)
+        if llm_result.get("ok"):
+            return str(llm_result["text"]).strip()
+        return "\n".join(
+            [
+                "## 直接对话",
+                "",
+                "这不是市场分析问题，所以我没有启动 strategy-orchestrator、SQL、RAG 或 Web 检索。",
+                "",
+                "当前未配置可用的 direct LLM API，因此只能用本地兜底回复：你可以继续直接问我问题；如果是市场战略、竞品、价格带、销量、政策或机会判断，我会进入市场分析链路。",
+                "",
+                f"LLM 状态：{llm_result.get('error')}",
+            ]
+        )
+
+    return "\n".join(
         [
             "## 我能做什么",
             "",
             "我是汽车市场战略分析智能体，适合处理需要证据链和结构化判断的市场问题。",
             "",
-            "我会先自主判断问题类型：能力介绍、使用帮助、闲聊类问题直接回答；只有出现明确的市场/品牌/车型/销量/政策/机会等分析信号时，才启动 ReAct 编排、SQL、RAG 或 Web 检索。",
-            "",
-            "我可以帮你做：",
-            "- 市场格局分析：销量、份额、集中度、头部/腰部/长尾结构。",
-            "- 竞品研究：品牌或车型对比、产品定位、价格带、动力类型和配置差异。",
-            "- 机会评估：细分市场空间、增长信号、进入窗口和主要风险。",
-            "- 政策影响：补贴、税收、出口、区域政策对市场结构的影响。",
-            "- 证据化报告：区分事实、推断和不确定性，并给出置信度。",
+            "入口路由会先判断问题类型：",
+            "- 市场战略、竞品、价格带、销量、政策、机会等问题进入 `strategy-orchestrator`。",
+            "- “你有哪些 skill”进入 `skill_inventory`，返回实际 skill 清单。",
+            "- 普通对话进入 direct LLM，不调用市场分析工具。",
+            "- 用户画像、用户分层、用户需求等进入独立 `user_insight` 路由。",
             "",
             "你可以这样问：",
             "- `分析 2026 年中国新能源乘用车市场竞争格局`",
             "- `对比比亚迪、特斯拉、吉利最近12个月的市场表现`",
             "- `评估15-20万新能源SUV市场机会`",
-            "",
-            "像“你好”“你能做什么”这类问题，我会直接回答；只有明确的市场分析问题才会启动 ReAct 编排和数据检索。",
         ]
     )
+
+
+def _direct_response_payload(question: str, route_decision: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    route_decision = route_decision or _classify_entry_route(question)
+    report = _direct_response_report(question, route_decision)
     return {
         "success": True,
         "question": question,
-        "analysis_type": "direct_response",
+        "analysis_type": str(route_decision.get("route") or "direct_response"),
         "time_range": "",
         "entities": [],
         "confidence": 1.0,
         "cycles_used": 0,
-        "stop_reason": "direct_response_no_orchestration",
+        "stop_reason": f"{route_decision.get('route')}_no_market_orchestration",
         "sources": [],
         "evidence_count": 0,
         "facts_count": 0,
@@ -208,7 +490,7 @@ def _direct_response_payload(question: str, route_decision: Optional[Dict[str, A
                 "skill": "entry-route-classifier",
                 "action": "classify_and_answer_without_orchestration",
                 "status": "done",
-                "summary": f"入口路由判断为 {route_decision['route']}，原因：{route_decision['reason']}。未启动 strategy-orchestrator、SQL、RAG 或 Web 检索。",
+                "summary": f"入口路由判断为 {route_decision['route']}，原因：{route_decision['reason']}。未启动市场分析编排、SQL、RAG 或 Web 检索。",
                 "detail": route_decision,
             }
         ],
@@ -528,7 +810,10 @@ def _run_orchestrated_analysis(
         entities=entities,
     )
     task.max_react_cycles = max_cycles
-    orchestrator = create_orchestrator(event_callback=event_callback)
+    orchestrator = create_orchestrator(
+        event_callback=event_callback,
+        llm_plan_provider=_llm_plan_provider,
+    )
     result = orchestrator.execute(task)
     return {
         "success": result.success,
@@ -566,7 +851,7 @@ def _run_analysis(
     question = request.question.strip()
     started = time.time()
     route_decision = _classify_entry_route(question)
-    if route_decision["route"] == "direct_response":
+    if route_decision["route"] in DIRECT_ROUTES:
         payload = _direct_response_payload(question, route_decision)
         payload["execution_time"] = round(time.time() - started, 2)
         if event_callback:
@@ -575,7 +860,7 @@ def _run_analysis(
                     "phase": "Direct",
                     "stage": "stage1",
                     "status": "done",
-                    "summary": f"入口路由判断为直接回答：{route_decision['reason']}。不启动市场分析编排。",
+                    "summary": f"入口路由判断为 {route_decision['route']}：{route_decision['reason']}。不启动市场分析编排。",
                     "detail": route_decision,
                 }
             )
@@ -700,7 +985,7 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
     async def stream() -> Iterable[str]:
         question = request.question.strip()
         route_decision = _classify_entry_route(question)
-        if route_decision["route"] == "direct_response":
+        if route_decision["route"] in DIRECT_ROUTES:
             result = _direct_response_payload(question, route_decision)
             yield _sse(
                 "react",
@@ -708,7 +993,7 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
                     "phase": "Direct",
                     "stage": "stage1",
                     "status": "done",
-                    "summary": f"入口路由判断为直接回答：{route_decision['reason']}。未启动 SQL/RAG/ReAct 市场分析。",
+                    "summary": f"入口路由判断为 {route_decision['route']}：{route_decision['reason']}。未启动 SQL/RAG/ReAct 市场分析。",
                     "detail": route_decision,
                 },
             )

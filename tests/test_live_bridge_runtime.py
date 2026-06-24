@@ -15,7 +15,9 @@ if str(ROOT) not in sys.path:
 from python_wrapper.live_agent_server import (  # noqa: E402
     AnalyzeRequest,
     _classify_entry_route,
+    _installed_skill_inventory,
     _is_direct_response_query,
+    _llm_plan_provider,
     _normalize_time_range,
     _run_analysis,
     _react_trace,
@@ -48,7 +50,7 @@ class LiveBridgeRuntimeTest(unittest.TestCase):
 
         direct_route = _classify_entry_route("你能帮我什么")
         analysis_route = _classify_entry_route("你能帮我分析比亚迪最近12个月市场策略吗")
-        self.assertEqual(direct_route["route"], "direct_response")
+        self.assertEqual(direct_route["route"], "capability_help")
         self.assertEqual(analysis_route["route"], "market_analysis")
         self.assertIn("帮我", "".join(direct_route["help_hits"]))
         self.assertIn("分析", analysis_route["analysis_hits"])
@@ -56,12 +58,75 @@ class LiveBridgeRuntimeTest(unittest.TestCase):
 
         result = _run_analysis(AnalyzeRequest(question="你能帮我什么"))
 
-        self.assertEqual(result["analysis_type"], "direct_response")
+        self.assertEqual(result["analysis_type"], "capability_help")
         self.assertEqual(result["cycles_used"], 0)
-        self.assertEqual(result["stop_reason"], "direct_response_no_orchestration")
+        self.assertEqual(result["stop_reason"], "capability_help_no_market_orchestration")
         self.assertIn("我能做什么", result["report"])
         self.assertNotIn("七步法业务战略分析报告", result["report"])
-        self.assertEqual(result["execution_trace"][0]["detail"]["route"], "direct_response")
+        self.assertEqual(result["execution_trace"][0]["detail"]["route"], "capability_help")
+
+    def test_skill_inventory_route_returns_actual_skills(self) -> None:
+        route = _classify_entry_route("你有哪些skill")
+        self.assertEqual(route["route"], "skill_inventory")
+        self.assertTrue(_is_direct_response_query("你有哪些skill"))
+
+        skills = _installed_skill_inventory()
+        skill_names = {item["name"] for item in skills}
+        self.assertIn("automotive-strategy-analysis", skill_names)
+
+        result = _run_analysis(AnalyzeRequest(question="你有哪些skill"))
+        self.assertEqual(result["analysis_type"], "skill_inventory")
+        self.assertEqual(result["cycles_used"], 0)
+        self.assertIn("当前可用 Skills", result["report"])
+        self.assertIn("automotive-strategy-analysis", result["report"])
+        self.assertEqual(result["skill_trace"], [])
+
+    def test_user_insight_route_does_not_enter_market_analysis(self) -> None:
+        route = _classify_entry_route("帮我做一下用户洞察和目标客群画像")
+        self.assertEqual(route["route"], "user_insight")
+        self.assertTrue(_is_direct_response_query("帮我做一下用户洞察和目标客群画像"))
+
+        result = _run_analysis(AnalyzeRequest(question="帮我做一下用户洞察和目标客群画像"))
+        self.assertEqual(result["analysis_type"], "user_insight")
+        self.assertEqual(result["cycles_used"], 0)
+        self.assertIn("不会误进入市场战略分析链路", result["report"])
+
+    def test_general_chat_route_uses_direct_response_without_market_tools(self) -> None:
+        route = _classify_entry_route("今天天气不错，聊两句")
+        self.assertEqual(route["route"], "general_chat")
+
+        result = _run_analysis(AnalyzeRequest(question="今天天气不错，聊两句"))
+        self.assertEqual(result["analysis_type"], "general_chat")
+        self.assertEqual(result["cycles_used"], 0)
+        self.assertEqual(result["skill_trace"], [])
+        self.assertNotIn("七步法业务战略分析报告", result["report"])
+
+    def test_llm_plan_provider_validates_tool_steps(self) -> None:
+        import os
+        from unittest.mock import patch
+
+        context = {
+            "raw_query": "分析15-20万插混SUV机会",
+            "task_type": "opportunity_assessment",
+            "time_range": "最近12个月",
+            "entities": ["15-20万", "插混", "SUV"],
+            "analysis_plan": {},
+            "completed_steps": [],
+            "evidence_gaps": [],
+        }
+        fake_response = {
+            "ok": True,
+            "text": '{"steps":["targeted-sql-pack:market_metrics","unknown-tool:bad","rag:validation"]}',
+        }
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+            with patch("python_wrapper.live_agent_server._call_openai_compatible_chat", return_value=fake_response):
+                steps = _llm_plan_provider(context)
+
+        self.assertIn("targeted-sql-pack:market_metrics", steps)
+        self.assertIn("rag:validation", steps)
+        self.assertIn("analysis-framework:automotive_strategy_seven_stage", steps)
+        self.assertIn("report-generator-agent:quality_review", steps)
+        self.assertNotIn("unknown-tool:bad", steps)
 
     def test_react_trace_exposes_plan_act_reflect_quality(self) -> None:
         trace = _react_trace(
