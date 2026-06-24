@@ -319,6 +319,7 @@
         </div>
         <div class="top-actions">
           <button class="btn" id="healthBtn">刷新状态</button>
+          <button class="btn" id="newSessionBtn">新会话</button>
           <button class="btn" id="clearBtn">清空</button>
           <button class="btn" id="exportBtn">导出</button>
         </div>
@@ -355,7 +356,7 @@
   </div>
 
   <script>
-    const API_BASE = "";
+    const API_BASE = "http://127.0.0.1:18003";
     const CHAT_HISTORY_STORAGE = "marketChatHistory";
     const WEB_SESSION_STORAGE = "marketWebSessionId";
     const newSessionId = () => {
@@ -375,6 +376,7 @@
       currentId: loadSessionId(),
       running: false,
       abortController: null,
+      eventSource: null,
       activeRun: null,
     };
 
@@ -589,8 +591,57 @@
       setStatus("run", "分析中");
 
       let finalText = "";
+      let settled = false;
+      const finish = (ok, message) => {
+        if (settled) return;
+        settled = true;
+        if (state.eventSource) {
+          state.eventSource.close();
+          state.eventSource = null;
+        }
+        if (!ok && message) {
+          appendRunEvent({ phase: "Error", status: "error", summary: message });
+          chat.messages.push({ role: "assistant", content: message + "\n\n" + collectRunText(runId), timestamp: Date.now() });
+          setStatus("bad", "失败");
+        } else {
+          chat.messages.push({ role: "assistant", content: finalText || collectRunText(runId), timestamp: Date.now() });
+          setStatus("ok", "完成");
+        }
+        state.running = false;
+        state.abortController = null;
+        state.activeRun = null;
+        $("sendBtn").textContent = "发送";
+        $("sendBtn").classList.add("primary");
+        saveHistory();
+      };
+
       try {
-        const response = await fetch(API_BASE + "/analyze_sse", {
+        const eventSource = new EventSource(`${API_BASE}/sse?session_id=${encodeURIComponent(chat.id)}`);
+        state.eventSource = eventSource;
+        const onMessage = (eventName) => (event) => {
+          const data = JSON.parse(event.data || "{}");
+          if (eventName === "complete") {
+            renderComplete(data);
+            finalText = data.report || data.answer || "";
+            finish(true);
+          } else if (eventName === "error") {
+            finish(false, data.error || data.error_type || "后端返回错误");
+          } else {
+            appendRunEvent(data);
+          }
+        };
+        eventSource.addEventListener("progress", onMessage("progress"));
+        eventSource.addEventListener("react", onMessage("react"));
+        eventSource.addEventListener("complete", onMessage("complete"));
+        eventSource.addEventListener("error", (event) => {
+          if (event.data) {
+            onMessage("error")(event);
+            return;
+          }
+          if (!settled) finish(false, "SSE 连接中断");
+        });
+
+        const response = await fetch(API_BASE + "/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -602,47 +653,12 @@
           }),
           signal: state.abortController.signal,
         });
-        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-        let buffer = "";
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parsed = parseSseFrames(buffer);
-          buffer = parsed.rest;
-          for (const frame of parsed.frames) {
-            const item = parseFrame(frame);
-            if (!item) continue;
-            if (item.event === "progress" || item.event === "react") {
-              appendRunEvent(item.data);
-            } else if (item.event === "complete") {
-              renderComplete(item.data);
-              finalText = item.data.report || item.data.answer || "";
-            } else if (item.event === "error") {
-              throw new Error(item.data.error || item.data.error_type || "后端返回错误");
-            }
-          }
-        }
-        chat.messages.push({ role: "assistant", content: finalText || collectRunText(runId), timestamp: Date.now() });
-        setStatus("ok", "完成");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
       } catch (err) {
         const message = err.name === "AbortError" ? "用户已停止生成。" : "分析失败：" + err.message;
-        appendRunEvent({ phase: "Error", status: "error", summary: message });
-        chat.messages.push({ role: "assistant", content: message + "\n\n" + collectRunText(runId), timestamp: Date.now() });
-        setStatus("bad", err.name === "AbortError" ? "已停止" : "失败");
-      } finally {
-        state.running = false;
-        state.abortController = null;
-        state.activeRun = null;
-        $("sendBtn").textContent = "发送";
-        $("sendBtn").classList.add("primary");
-        saveHistory();
+        finish(false, message);
       }
     }
-
     function collectRunText(runId) {
       const stream = $(runId + "_stream");
       const report = $(runId + "_report");
@@ -652,6 +668,10 @@
     function stopOrSend() {
       if (state.running && state.abortController) {
         state.abortController.abort();
+        if (state.eventSource) {
+          state.eventSource.close();
+          state.eventSource = null;
+        }
         return;
       }
       sendMessage();
@@ -667,7 +687,7 @@
         const response = await fetch(API_BASE + "/health");
         const data = await response.json();
         const db = data.db || {};
-        setStatus(db.connected ? "ok" : "bad", db.connected ? "正常" : "异常");
+        setStatus(data.status === "ok" ? "ok" : "bad", data.status === "ok" ? "正常" : "异常");
         $("dbDocs").textContent = db.documents ?? "-";
         $("dbChunks").textContent = db.chunks ?? "-";
       } catch {
@@ -680,6 +700,10 @@
       state.currentId = newSessionId();
       persistCurrentSession();
       $("messages").innerHTML = `<div class="welcome" id="welcome"><strong>把 agent 的思考过程展示出来</strong><div>发送一个市场分析问题后，这里会实时输出编排计划、工具调用、证据入账、反思缺口、重规划和最终报告。</div></div>`;
+    }
+
+    function newSession() {
+      clearChat();
     }
 
     function exportChat() {
@@ -703,6 +727,7 @@
     });
     $("sendBtn").addEventListener("click", stopOrSend);
     $("healthBtn").addEventListener("click", refreshHealth);
+    $("newSessionBtn").addEventListener("click", newSession);
     $("clearBtn").addEventListener("click", clearChat);
     $("exportBtn").addEventListener("click", exportChat);
     $("input").addEventListener("input", function () {
