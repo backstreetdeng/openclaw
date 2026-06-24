@@ -345,6 +345,7 @@
             <option value="opportunity">机会评估</option>
             <option value="market">市场趋势</option>
             <option value="comprehensive">综合研究</option>
+            <option value="business_analysis">商业模式分析</option>
           </select>
           <span>时间</span>
           <input id="timeRange" type="text" placeholder="可留空，如 2026年 / 最近6个月">
@@ -355,9 +356,23 @@
 
   <script>
     const API_BASE = "";
+    const CHAT_HISTORY_STORAGE = "marketChatHistory";
+    const WEB_SESSION_STORAGE = "marketWebSessionId";
+    const newSessionId = () => {
+      if (window.crypto?.randomUUID) return "web_" + window.crypto.randomUUID();
+      return "web_" + Date.now() + "_" + Math.random().toString(36).slice(2, 10);
+    };
+    const loadSessionId = () => {
+      let id = localStorage.getItem(WEB_SESSION_STORAGE);
+      if (!id) {
+        id = newSessionId();
+        localStorage.setItem(WEB_SESSION_STORAGE, id);
+      }
+      return id;
+    };
     const state = {
-      chats: JSON.parse(localStorage.getItem("marketChatHistory") || "[]"),
-      currentId: null,
+      chats: JSON.parse(localStorage.getItem(CHAT_HISTORY_STORAGE) || "[]"),
+      currentId: loadSessionId(),
       running: false,
       abortController: null,
       activeRun: null,
@@ -367,8 +382,13 @@
     const fmtTime = (ts = Date.now()) => new Date(ts).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+    function persistCurrentSession() {
+      if (state.currentId) localStorage.setItem(WEB_SESSION_STORAGE, state.currentId);
+    }
+
     function saveHistory() {
-      localStorage.setItem("marketChatHistory", JSON.stringify(state.chats.slice(0, 40)));
+      persistCurrentSession();
+      localStorage.setItem(CHAT_HISTORY_STORAGE, JSON.stringify(state.chats.slice(0, 40)));
       renderHistory();
     }
 
@@ -384,8 +404,9 @@
     function currentChat() {
       let chat = state.chats.find(item => item.id === state.currentId);
       if (!chat) {
-        chat = { id: "chat_" + Date.now(), title: "新对话", messages: [], updatedAt: Date.now() };
+        chat = { id: state.currentId || newSessionId(), title: "新对话", messages: [], updatedAt: Date.now() };
         state.currentId = chat.id;
+        persistCurrentSession();
         state.chats.unshift(chat);
       }
       return chat;
@@ -395,6 +416,7 @@
       const chat = state.chats.find(item => item.id === id);
       if (!chat || state.running) return;
       state.currentId = id;
+      persistCurrentSession();
       $("welcome").style.display = "none";
       renderMessages(chat.messages);
     }
@@ -576,6 +598,7 @@
             analysis_type: $("analysisType").value || null,
             time_range: $("timeRange").value || null,
             max_cycles: 3,
+            session_id: chat.id,
           }),
           signal: state.abortController.signal,
         });
@@ -654,7 +677,8 @@
 
     function clearChat() {
       if (state.running) return;
-      state.currentId = null;
+      state.currentId = newSessionId();
+      persistCurrentSession();
       $("messages").innerHTML = `<div class="welcome" id="welcome"><strong>把 agent 的思考过程展示出来</strong><div>发送一个市场分析问题后，这里会实时输出编排计划、工具调用、证据入账、反思缺口、重规划和最终报告。</div></div>`;
     }
 

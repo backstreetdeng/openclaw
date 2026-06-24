@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Architecture boundary tests for the frontend live bridge.
-
-The live bridge is allowed to normalize request metadata and relay to
-strategy-orchestrator. It must not become the market-analysis brain again.
-"""
+"""Architecture boundary tests for the frontend live bridge."""
 
 from __future__ import annotations
 
@@ -17,7 +13,7 @@ LIVE_SERVER = ROOT / "python_wrapper" / "live_agent_server.py"
 
 
 def _source() -> str:
-    return LIVE_SERVER.read_text(encoding="utf-8")
+    return LIVE_SERVER.read_text(encoding="utf-8-sig")
 
 
 def _function_calls(function_name: str) -> set[str]:
@@ -37,17 +33,19 @@ def _function_calls(function_name: str) -> set[str]:
 
 
 class BridgeBoundaryTest(unittest.TestCase):
-    def test_live_bridge_relays_to_strategy_orchestrator(self) -> None:
+    def test_live_bridge_uses_openclaw_agent_sessions(self) -> None:
         src = _source()
         calls = _function_calls("_run_analysis")
 
         self.assertIn("_run_orchestrated_analysis", calls)
-        self.assertIn(
-            "from executors.orchestrator import create_orchestrator",
-            src,
-        )
-        self.assertNotIn("market_strategy.orchestrator_integration", src)
-        self.assertIn("sse_relay_to_strategy_orchestrator", src)
+        self.assertIn("_run_market_agent_turn", calls)
+        self.assertIn("openclaw/{agent_id}", src)
+        self.assertIn("x-openclaw-session-key", src)
+        self.assertIn("STRATEGY_ORCHESTRATOR_AGENT_ID", src)
+        self.assertNotIn("from executors.orchestrator import create_orchestrator", src)
+        self.assertNotIn("orchestrator.execute(", src)
+        self.assertNotIn("from protocols.task_protocol import", src)
+        self.assertNotIn("get_quality_gate", src)
 
     def test_live_bridge_does_not_embed_business_tool_chain(self) -> None:
         src = _source()
@@ -65,11 +63,7 @@ class BridgeBoundaryTest(unittest.TestCase):
 
         for token in forbidden_tokens:
             with self.subTest(token=token):
-                self.assertNotIn(
-                    token,
-                    src,
-                    f"live bridge must not own business analysis logic: {token}",
-                )
+                self.assertNotIn(token, src)
 
     def test_run_analysis_does_not_directly_call_market_tools(self) -> None:
         calls = _function_calls("_run_analysis")

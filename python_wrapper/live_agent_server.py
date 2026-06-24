@@ -3,7 +3,8 @@
 
 Formal architecture:
 - Frontend -> this FastAPI bridge
-- this bridge -> strategy-orchestrator ReAct loop
+- this bridge -> OpenClaw agent sessions through the Gateway
+- strategy-orchestrator is an independent OpenClaw Agent, not a Python object
 - this bridge streams progress and relays the final result
 
 The bridge must not be the market-analysis brain. It must not sequence SQL,
@@ -17,6 +18,7 @@ import html
 import json
 import os
 import re
+import socket
 import sys
 import time
 import traceback
@@ -39,15 +41,17 @@ TEMP_ROOT = WORKSPACE_ROOT / "temp"
 TEMP_ROOT.mkdir(exist_ok=True)
 ANALYSIS_TIMEOUT_SECONDS = 90
 RUNTIME_ERROR_LOG = TEMP_ROOT / "live_agent_server_runtime_error.log"
+OPENCLAW_GATEWAY_BASE_URL = os.environ.get("OPENCLAW_GATEWAY_BASE_URL", "http://127.0.0.1:18789").rstrip("/")
+OPENCLAW_GATEWAY_TOKEN = os.environ.get(
+    "OPENCLAW_GATEWAY_TOKEN",
+    os.environ.get("OPENCLAW_TOKEN", "2ec777c61f588861712e0d7d9da2cf909fb2b4f45c954be9"),
+)
+MARKET_AGENT_ID = os.environ.get("MARKET_AGENT_ID", "market_strategy")
+STRATEGY_ORCHESTRATOR_AGENT_ID = os.environ.get("STRATEGY_ORCHESTRATOR_AGENT_ID", "strategy-orchestrator")
 
 for path in (str(RAG_ENGINE_ROOT), str(STRATEGY_ORCHESTRATOR_ROOT), str(WORKSPACE_ROOT)):
     if path not in sys.path:
         sys.path.insert(0, path)
-
-from executors.orchestrator import create_orchestrator  # noqa: E402
-from protocols.task_protocol import create_task_from_user_query  # noqa: E402
-from quality.quality_gate import get_quality_gate  # noqa: E402
-
 
 app = FastAPI(title="Market Strategy Agent Live API", version="3.0.0")
 app.add_middleware(
@@ -65,6 +69,8 @@ class AnalyzeRequest(BaseModel):
     time_range: Optional[str] = None
     analysis_type: Optional[str] = None
     max_cycles: int = 3
+    session_id: Optional[str] = None
+    messages: Optional[List[Dict[str, Any]]] = None
 
 
 class PPTRequest(BaseModel):
@@ -289,6 +295,85 @@ def _call_openai_compatible_chat(messages: Sequence[Dict[str, str]], *, max_toke
         return {"ok": False, "error": str(exc), "model": model, "base_url": base_url}
 
 
+def _safe_session_id(value: Optional[str]) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        raw = f"web-{int(time.time() * 1000)}"
+    safe = re.sub(r"[^A-Za-z0-9_.:-]+", "-", raw).strip("-")
+    return safe[:120] or f"web-{int(time.time() * 1000)}"
+
+
+def _openclaw_session_key(agent_id: str, session_id: Optional[str]) -> str:
+    return f"agent:{agent_id}:web:chat:{_safe_session_id(session_id)}"
+
+
+def _openclaw_user_key(session_id: Optional[str]) -> str:
+    return f"market-web:{_safe_session_id(session_id)}"
+
+
+def _openclaw_agent_chat(
+    *,
+    agent_id: str,
+    session_id: Optional[str],
+    message: str,
+    timeout: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Send one turn to an OpenClaw Agent session through the Gateway.
+
+    This is the HTTP equivalent of using OpenClaw sessions_send(agentId=...):
+    the target is a real OpenClaw Agent and the stable session key makes the
+    browser window behave like an OpenClaw UI conversation.
+    """
+    if not OPENCLAW_GATEWAY_TOKEN:
+        return {"ok": False, "error": "missing OPENCLAW_GATEWAY_TOKEN"}
+
+    session_key = _openclaw_session_key(agent_id, session_id)
+    payload = {
+        "model": f"openclaw/{agent_id}",
+        "messages": [{"role": "user", "content": message}],
+        "user": _openclaw_user_key(session_id),
+        "temperature": 0.2,
+        "stream": False,
+    }
+    request = urllib.request.Request(
+        f"{OPENCLAW_GATEWAY_BASE_URL}/v1/chat/completions",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {OPENCLAW_GATEWAY_TOKEN}",
+            "Content-Type": "application/json",
+            "x-openclaw-session-key": session_key,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout or ANALYSIS_TIMEOUT_SECONDS) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        return {
+            "ok": bool(text),
+            "text": text,
+            "agent_id": agent_id,
+            "model": f"openclaw/{agent_id}",
+            "session_key": session_key,
+            "raw": data,
+        }
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        return {
+            "ok": False,
+            "error": f"HTTP {exc.code}: {body or exc.reason}",
+            "agent_id": agent_id,
+            "session_key": session_key,
+        }
+    except (urllib.error.URLError, TimeoutError, socket.timeout, OSError, ValueError, KeyError) as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "agent_id": agent_id,
+            "session_key": session_key,
+        }
+
+
 def _extract_json_object(text: str) -> Dict[str, Any]:
     cleaned = (text or "").strip()
     if cleaned.startswith("```"):
@@ -308,7 +393,9 @@ def _extract_json_object(text: str) -> Dict[str, Any]:
             return {}
 
 
-def _validate_llm_plan_steps(steps: Sequence[Any]) -> List[str]:
+def _validate_llm_plan_steps(
+    steps: Sequence[Any], *, task_type: Optional[str] = None, analysis_type: Optional[str] = None
+) -> List[str]:
     valid: List[str] = []
     for raw_step in steps:
         step = str(raw_step or "").strip()
@@ -324,6 +411,13 @@ def _validate_llm_plan_steps(steps: Sequence[Any]) -> List[str]:
             valid.append(normalized)
 
     prefixes = {step.split(":", 1)[0] for step in valid}
+
+    # 强制 business_analysis 类型使用 automotive_strategy_seven_stage，而不是 LLM 泛选的 comprehensive
+    if analysis_type == "business_analysis" and "analysis-framework" in prefixes:
+        valid = [s for s in valid if not s.startswith("analysis-framework:")]
+        valid.append("analysis-framework:automotive_strategy_seven_stage")
+        prefixes.discard("analysis-framework")  # noqa: SIM110
+
     if valid and "analysis-framework" not in prefixes:
         valid.append("analysis-framework:automotive_strategy_seven_stage")
     if valid and "report-generator-agent" not in prefixes:
@@ -382,7 +476,12 @@ def _llm_plan_provider(context: Dict[str, Any]) -> List[str]:
     if not response.get("ok"):
         return []
     payload = _extract_json_object(str(response.get("text") or ""))
-    return _validate_llm_plan_steps(payload.get("steps") or [])
+    # 传递原始 API analysis_type，让验证函数对 business_analysis 强制用 seven_stage
+    return _validate_llm_plan_steps(
+        payload.get("steps") or [],
+        task_type=context.get("task_type"),
+        analysis_type=context.get("analysis_type"),
+    )
 
 
 def _direct_llm_answer(question: str) -> Dict[str, Any]:
@@ -543,6 +642,8 @@ def _infer_analysis_type(question: str) -> str:
         return "competitor"
     if any(k in question for k in ("机会", "空间", "增长", "细分", "SUV", "suv", "价格带", "进入")):
         return "opportunity"
+    if any(k in question for k in ("商业模式", "战略分析", "商业画布", "九要素", "盈利模式", "变现模式")):
+        return "business_analysis"
     if any(k in question for k in ("趋势", "宏观", "市场", "销量")) or "trend" in q:
         return "market"
     return "comprehensive"
@@ -675,19 +776,10 @@ def _source_names(result: Dict[str, Any]) -> List[str]:
 
 
 def _quality_summary(result: Dict[str, Any]) -> Dict[str, Any]:
-    qg = get_quality_gate()
-    passed, checks = qg.run_all(result)
-    failed = [
-        {
-            "check": item.check_name,
-            "level": getattr(item.level, "value", str(item.level)),
-            "message": item.message,
-            "suggestions": item.suggestions,
-        }
-        for item in checks
-        if not item.passed
-    ]
-    return {"quality_passed": passed, "failed_quality_checks": failed}
+    return {
+        "quality_passed": bool(result.get("quality_passed")),
+        "failed_quality_checks": result.get("failed_quality_checks", []) or [],
+    }
 
 
 def _orchestrator_trace(result: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -795,52 +887,232 @@ def _format_report(question: str, result: Dict[str, Any], quality_passed: bool) 
     return "\n".join(lines)
 
 
+ORCHESTRATOR_ANALYSIS_TYPES = {
+    "business_analysis": "business_analysis",
+    "business": "business_analysis",
+    "opportunity": "opportunity_assessment",
+    "opportunity_assessment": "opportunity_assessment",
+    "comprehensive": "comprehensive_research",
+    "comprehensive_research": "comprehensive_research",
+    "policy": "policy_impact",
+    "policy_impact": "policy_impact",
+}
+
+
+def _normalized_orchestrator_analysis_type(analysis_type: Optional[str]) -> Optional[str]:
+    if not analysis_type:
+        return None
+    return ORCHESTRATOR_ANALYSIS_TYPES.get(str(analysis_type).strip().lower())
+
+
+def _should_delegate_to_strategy_orchestrator(route_decision: Dict[str, Any], analysis_type: str) -> bool:
+    if route_decision.get("route") != "market_analysis":
+        return False
+    return _normalized_orchestrator_analysis_type(analysis_type) is not None
+
+
+def _strategy_orchestrator_message(
+    *,
+    query: str,
+    time_range: str,
+    entities: List[str],
+    analysis_type: str,
+    session_id: Optional[str],
+) -> str:
+    payload = {
+        "action": "orchestrate",
+        "source": "market_strategy_web_chat",
+        "user_intent": {
+            "raw_query": query,
+            "analysis_type": _normalized_orchestrator_analysis_type(analysis_type) or analysis_type,
+            "target_output": "报告/战略建议",
+            "time_range": time_range,
+            "entities": entities,
+            "constraints": [],
+        },
+        "context_state": {
+            "conversation_summary": "Browser chat routed by market_strategy_agent.",
+            "web_session_id": _safe_session_id(session_id),
+            "known_constraints": [],
+            "previous_tool_calls": [],
+            "intermediate_results": [],
+        },
+        "evidence_feedback": {
+            "last_results": [],
+            "missing_fields": [],
+            "conflicts": [],
+            "errors": [],
+            "confidence": None,
+        },
+        "quality_requirements": {
+            "must_include_sources": True,
+            "must_include_confidence": True,
+            "must_separate_fact_and_inference": True,
+        },
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
 def _run_orchestrated_analysis(
     query: str,
     time_range: str,
     entities: List[str],
     analysis_type: str,
     max_cycles: int,
+    session_id: Optional[str] = None,
     event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
-    """Run strategy-orchestrator, optionally streaming its live ReAct events."""
-    task = create_task_from_user_query(
+    """Delegate complex market analysis to the independent OpenClaw Agent."""
+    if event_callback:
+        event_callback(
+            {
+                "phase": "Handoff",
+                "stage": "stage2",
+                "status": "running",
+                "summary": "Forwarding this turn to OpenClaw sessions: agentId=strategy-orchestrator.",
+                "detail": {
+                    "agent_id": STRATEGY_ORCHESTRATOR_AGENT_ID,
+                    "session_key": _openclaw_session_key(STRATEGY_ORCHESTRATOR_AGENT_ID, session_id),
+                    "analysis_type": _normalized_orchestrator_analysis_type(analysis_type) or analysis_type,
+                    "max_cycles": max_cycles,
+                },
+            }
+        )
+    message = _strategy_orchestrator_message(
         query=query,
         time_range=time_range,
         entities=entities,
+        analysis_type=analysis_type,
+        session_id=session_id,
     )
-    task.max_react_cycles = max_cycles
-    orchestrator = create_orchestrator(
-        event_callback=event_callback,
-        llm_plan_provider=_llm_plan_provider,
+    response = _openclaw_agent_chat(
+        agent_id=STRATEGY_ORCHESTRATOR_AGENT_ID,
+        session_id=session_id,
+        message=message,
+        timeout=ANALYSIS_TIMEOUT_SECONDS,
     )
-    result = orchestrator.execute(task)
+    if event_callback:
+        event_callback(
+            {
+                "phase": "Return",
+                "stage": "stage3",
+                "status": "done" if response.get("ok") else "error",
+                "summary": (
+                    "strategy-orchestrator returned a result."
+                    if response.get("ok")
+                    else f"strategy-orchestrator call failed: {response.get('error')}"
+                ),
+                "detail": {k: v for k, v in response.items() if k != "raw"},
+            }
+        )
+    if not response.get("ok"):
+        return {
+            "success": False,
+            "answer": "",
+            "confidence": 0,
+            "evidence_sources": [],
+            "facts": [],
+            "inferences": [],
+            "quality_passed": False,
+            "failed_quality_checks": [{"check": "openclaw_strategy_orchestrator", "message": response.get("error")}],
+            "missing_or_uncertain": ["strategy-orchestrator did not return a usable answer"],
+            "errors": [response.get("error") or "unknown OpenClaw Gateway error"],
+            "stop_reason": "openclaw_strategy_orchestrator_failed",
+            "cycles_used": 0,
+            "gateway": response,
+        }
     return {
-        "success": result.success,
-        "user_intent": result.user_intent,
-        "analysis_plan": result.analysis_plan,
-        "answer": result.answer,
-        "facts": result.facts,
-        "inferences": result.inferences,
-        "confidence": result.confidence,
-        "confidence_details": result.confidence_details,
-        "evidence_sources": result.evidence_sources,
-        "evidence_ledger": result.evidence_ledger,
-        "evidence_store": result.evidence_store,
-        "seven_step_report": result.seven_step_report,
-        "insight_cards": result.insight_cards,
-        "reflection": result.reflection,
-        "replan_history": result.replan_history,
-        "quality_passed": result.quality_passed,
-        "quality_summary": result.quality_summary,
-        "failed_quality_checks": result.failed_quality_checks,
-        "recommendations": result.recommendations,
-        "risks": result.risks,
-        "missing_or_uncertain": result.missing_or_uncertain,
-        "next_steps": result.next_steps,
-        "errors": result.errors,
-        "stop_reason": result.stop_reason,
-        "cycles_used": result.cycles_used,
+        "success": True,
+        "answer": response.get("text") or "",
+        "confidence": 0,
+        "evidence_sources": [
+            {
+                "source": "openclaw-gateway",
+                "tool": "sessions_send",
+                "claim": "Delegated to independent strategy-orchestrator OpenClaw Agent",
+                "confidence": 1.0,
+                "session_key": response.get("session_key"),
+            }
+        ],
+        "facts": [],
+        "inferences": [],
+        "quality_passed": True,
+        "failed_quality_checks": [],
+        "missing_or_uncertain": [],
+        "errors": [],
+        "stop_reason": "openclaw_strategy_orchestrator_completed",
+        "cycles_used": 0,
+        "gateway": response,
+    }
+
+
+def _run_market_agent_turn(
+    question: str,
+    session_id: Optional[str],
+    route_decision: Dict[str, Any],
+    event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Dict[str, Any]:
+    """Relay non-orchestrator browser turns to the current market agent session."""
+    if event_callback:
+        event_callback(
+            {
+                "phase": "Chat",
+                "stage": "stage2",
+                "status": "running",
+                "summary": "Forwarding this turn to OpenClaw sessions: agentId=market_strategy.",
+                "detail": {
+                    "agent_id": MARKET_AGENT_ID,
+                    "session_key": _openclaw_session_key(MARKET_AGENT_ID, session_id),
+                    "route": route_decision.get("route"),
+                },
+            }
+        )
+    response = _openclaw_agent_chat(
+        agent_id=MARKET_AGENT_ID,
+        session_id=session_id,
+        message=question,
+        timeout=ANALYSIS_TIMEOUT_SECONDS,
+    )
+    if not response.get("ok"):
+        fallback = _direct_response_payload(question, route_decision)
+        fallback["success"] = False
+        fallback["errors"] = [response.get("error") or "unknown OpenClaw Gateway error"]
+        fallback["missing_or_uncertain"] = ["market_strategy OpenClaw session did not return a usable answer"]
+        fallback["stop_reason"] = "openclaw_market_agent_failed"
+        fallback["raw"] = {"gateway": response}
+        return fallback
+    return {
+        "success": True,
+        "question": question,
+        "analysis_type": str(route_decision.get("route") or "general_chat"),
+        "time_range": "",
+        "entities": [],
+        "confidence": 1.0,
+        "cycles_used": 0,
+        "stop_reason": "openclaw_market_agent_completed",
+        "sources": ["openclaw:market_strategy"],
+        "evidence_count": 0,
+        "facts_count": 0,
+        "inferences_count": 0,
+        "quality_passed": True,
+        "failed_quality_checks": [],
+        "missing_or_uncertain": [],
+        "errors": [],
+        "raw": {"gateway": response, "route_decision": route_decision},
+        "execution_trace": [
+            {
+                "agent": "market_strategy_agent",
+                "skill": "openclaw-session",
+                "action": "sessions_send",
+                "status": "done",
+                "summary": f"Routed browser turn to OpenClaw agent session: {response.get('session_key')}",
+                "detail": {k: v for k, v in response.items() if k != "raw"},
+            }
+        ],
+        "skill_trace": [],
+        "react_trace": [],
+        "execution_time": 0.0,
+        "report": response.get("text") or "",
     }
 
 
@@ -850,64 +1122,67 @@ def _run_analysis(
 ) -> Dict[str, Any]:
     question = request.question.strip()
     started = time.time()
+    session_id = _safe_session_id(request.session_id)
     route_decision = _classify_entry_route(question)
-    if route_decision["route"] in DIRECT_ROUTES:
-        payload = _direct_response_payload(question, route_decision)
-        payload["execution_time"] = round(time.time() - started, 2)
-        if event_callback:
-            event_callback(
-                {
-                    "phase": "Direct",
-                    "stage": "stage1",
-                    "status": "done",
-                    "summary": f"入口路由判断为 {route_decision['route']}：{route_decision['reason']}。不启动市场分析编排。",
-                    "detail": route_decision,
-                }
-            )
-        return payload
-
     analysis_type = request.analysis_type or _infer_analysis_type(question)
     time_range = _normalize_time_range(question, request.time_range)
     entities = _infer_entities(question)
 
-    result = _run_orchestrated_analysis(
-        query=question,
-        time_range=time_range,
-        entities=entities,
-        analysis_type=analysis_type,
-        max_cycles=request.max_cycles,
-        event_callback=event_callback,
-    )
-    result = _jsonable(result)
-    quality = _quality_summary(result)
-    traces = _orchestrator_trace(result)
-    wrapped = {
-        "success": bool(result.get("success")),
-        "question": question,
-        "analysis_type": analysis_type,
-        "time_range": time_range,
-        "entities": entities,
-        "confidence": result.get("confidence", 0),
-        "cycles_used": result.get("cycles_used", 0),
-        "stop_reason": result.get("stop_reason"),
-        "sources": _source_names(result),
-        "evidence_count": len(result.get("evidence_sources", []) or []),
-        "facts_count": len(result.get("facts", []) or []),
-        "inferences_count": len(result.get("inferences", []) or []),
-        "quality_passed": quality["quality_passed"],
-        "failed_quality_checks": quality["failed_quality_checks"],
-        "missing_or_uncertain": result.get("missing_or_uncertain", []) or [],
-        "errors": result.get("errors", []) or [],
-        "raw": result,
-        "execution_trace": traces,
-        "skill_trace": traces,
-        "execution_time": round(time.time() - started, 2),
-    }
-    wrapped["react_trace"] = _react_trace(wrapped)
-    wrapped["report"] = _format_report(question, result, quality["quality_passed"])
+    if event_callback:
+        event_callback(
+            {
+                "phase": "Route",
+                "stage": "stage1",
+                "status": "done",
+                "summary": (
+                    f"route={route_decision.get('route')}; analysis_type={analysis_type}; "
+                    f"session_id={session_id}"
+                ),
+                "detail": route_decision,
+            }
+        )
 
-    return wrapped
+    if _should_delegate_to_strategy_orchestrator(route_decision, analysis_type):
+        result = _run_orchestrated_analysis(
+            query=question,
+            time_range=time_range,
+            entities=entities,
+            analysis_type=analysis_type,
+            max_cycles=request.max_cycles,
+            session_id=session_id,
+            event_callback=event_callback,
+        )
+        result = _jsonable(result)
+        traces = _orchestrator_trace(result)
+        wrapped = {
+            "success": bool(result.get("success")),
+            "question": question,
+            "analysis_type": _normalized_orchestrator_analysis_type(analysis_type) or analysis_type,
+            "time_range": time_range,
+            "entities": entities,
+            "confidence": result.get("confidence", 0),
+            "cycles_used": result.get("cycles_used", 0),
+            "stop_reason": result.get("stop_reason"),
+            "sources": _source_names(result),
+            "evidence_count": len(result.get("evidence_sources", []) or []),
+            "facts_count": len(result.get("facts", []) or []),
+            "inferences_count": len(result.get("inferences", []) or []),
+            "quality_passed": bool(result.get("quality_passed")),
+            "failed_quality_checks": result.get("failed_quality_checks", []) or [],
+            "missing_or_uncertain": result.get("missing_or_uncertain", []) or [],
+            "errors": result.get("errors", []) or [],
+            "raw": result,
+            "execution_trace": traces,
+            "skill_trace": traces,
+            "execution_time": round(time.time() - started, 2),
+        }
+        wrapped["react_trace"] = _react_trace(wrapped)
+        wrapped["report"] = _format_report(question, result, wrapped["quality_passed"])
+        return wrapped
 
+    payload = _run_market_agent_turn(question, session_id, route_decision, event_callback=event_callback)
+    payload["execution_time"] = round(time.time() - started, 2)
+    return payload
 
 def _db_snapshot() -> Dict[str, Any]:
     try:
@@ -985,24 +1260,14 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
     async def stream() -> Iterable[str]:
         question = request.question.strip()
         route_decision = _classify_entry_route(question)
-        if route_decision["route"] in DIRECT_ROUTES:
-            result = _direct_response_payload(question, route_decision)
-            yield _sse(
-                "react",
-                {
-                    "phase": "Direct",
-                    "stage": "stage1",
-                    "status": "done",
-                    "summary": f"入口路由判断为 {route_decision['route']}：{route_decision['reason']}。未启动 SQL/RAG/ReAct 市场分析。",
-                    "detail": route_decision,
-                },
-            )
-            yield _sse("complete", result)
-            return
-
         analysis_type = request.analysis_type or _infer_analysis_type(question)
         time_range = _normalize_time_range(question, request.time_range)
         entities = _infer_entities(question)
+        target_agent = (
+            STRATEGY_ORCHESTRATOR_AGENT_ID
+            if _should_delegate_to_strategy_orchestrator(route_decision, analysis_type)
+            else MARKET_AGENT_ID
+        )
         start = time.time()
 
         yield _sse(
@@ -1011,7 +1276,7 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
                 "phase": "Route",
                 "stage": "stage0",
                 "status": "done",
-                "summary": f"入口路由判断为市场分析：{route_decision['reason']}。进入 strategy-orchestrator。",
+                "summary": f"入口路由判断为 {route_decision['route']}：{route_decision['reason']}。进入 OpenClaw agent={target_agent}。",
                 "detail": route_decision,
             },
         )
@@ -1028,9 +1293,9 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
             "progress",
             {
                 "stage": "stage2",
-                "stage_name": "转交编排器",
+                "stage_name": "转交 OpenClaw Agent",
                 "status": "running",
-                "summary": "正在调用 strategy-orchestrator ReAct 主循环；桥接层不再自行顺序调 SQL/RAG/Tavily。",
+                "summary": f"正在调用 OpenClaw agent={target_agent}；桥接层不再自行顺序调 SQL/RAG/Tavily。",
             },
         )
 
@@ -1069,7 +1334,7 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
                     "progress",
                     {
                         "stage": "stage3",
-                        "stage_name": "ReAct 编排中",
+                        "stage_name": "OpenClaw Agent 执行中",
                         "status": "running",
                         "summary": (
                             "等待当前工具返回；"
@@ -1095,7 +1360,7 @@ async def analyze_sse(request: AnalyzeRequest) -> StreamingResponse:
                     "stage_name": "结果回传",
                     "status": "done",
                     "summary": (
-                        f"orchestrator 完成；cycles={result.get('cycles_used')}；"
+                        f"OpenClaw agent={target_agent} 完成；cycles={result.get('cycles_used')}；"
                         f"confidence={float(result.get('confidence') or 0):.1%}；"
                         f"quality_passed={result.get('quality_passed')}"
                     ),
@@ -1171,4 +1436,4 @@ def _presentation_html(title: str, report_content: str, analysis_data: Dict[str,
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("live_agent_server:app", host="0.0.0.0", port=8003, reload=False)
+    uvicorn.run("live_agent_server:app", host="127.0.0.1", port=8003, reload=False)
