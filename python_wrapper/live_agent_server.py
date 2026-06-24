@@ -41,9 +41,8 @@ for path in (str(RAG_ENGINE_ROOT), str(STRATEGY_ORCHESTRATOR_ROOT), str(WORKSPAC
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from market_strategy.orchestrator_integration import run_orchestrated_analysis  # noqa: E402
-from market_strategy.orchestrator_integration import create_analysis_task  # noqa: E402
 from executors.orchestrator import create_orchestrator  # noqa: E402
+from protocols.task_protocol import create_task_from_user_query  # noqa: E402
 from quality.quality_gate import get_quality_gate  # noqa: E402
 
 
@@ -523,20 +522,10 @@ def _run_orchestrated_analysis(
     event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     """Run strategy-orchestrator, optionally streaming its live ReAct events."""
-    if event_callback is None:
-        return run_orchestrated_analysis(
-            query=query,
-            time_range=time_range,
-            entities=entities,
-            analysis_type=analysis_type,
-            max_cycles=max_cycles,
-        )
-
-    task = create_analysis_task(
+    task = create_task_from_user_query(
         query=query,
         time_range=time_range,
         entities=entities,
-        analysis_type=analysis_type,
     )
     task.max_react_cycles = max_cycles
     orchestrator = create_orchestrator(event_callback=event_callback)
@@ -596,23 +585,14 @@ def _run_analysis(
     time_range = _normalize_time_range(question, request.time_range)
     entities = _infer_entities(question)
 
-    if event_callback is None:
-        result = run_orchestrated_analysis(
-            query=question,
-            time_range=time_range,
-            entities=entities,
-            analysis_type=analysis_type,
-            max_cycles=request.max_cycles,
-        )
-    else:
-        result = _run_orchestrated_analysis(
-            query=question,
-            time_range=time_range,
-            entities=entities,
-            analysis_type=analysis_type,
-            max_cycles=request.max_cycles,
-            event_callback=event_callback,
-        )
+    result = _run_orchestrated_analysis(
+        query=question,
+        time_range=time_range,
+        entities=entities,
+        analysis_type=analysis_type,
+        max_cycles=request.max_cycles,
+        event_callback=event_callback,
+    )
     result = _jsonable(result)
     quality = _quality_summary(result)
     traces = _orchestrator_trace(result)

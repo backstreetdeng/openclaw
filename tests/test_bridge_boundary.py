@@ -41,11 +41,12 @@ class BridgeBoundaryTest(unittest.TestCase):
         src = _source()
         calls = _function_calls("_run_analysis")
 
-        self.assertIn("run_orchestrated_analysis", calls)
+        self.assertIn("_run_orchestrated_analysis", calls)
         self.assertIn(
-            "from market_strategy.orchestrator_integration import run_orchestrated_analysis",
+            "from executors.orchestrator import create_orchestrator",
             src,
         )
+        self.assertNotIn("market_strategy.orchestrator_integration", src)
         self.assertIn("sse_relay_to_strategy_orchestrator", src)
 
     def test_live_bridge_does_not_embed_business_tool_chain(self) -> None:

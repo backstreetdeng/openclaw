@@ -71,6 +71,11 @@ try:
         missing_required_blocks,
         run_targeted_sql_pack,
     )
+    from .tools.skill_strategy_adapter import (
+        SkillGuidedPlanner,
+        build_framework_analysis,
+    )
+    from .tools.agent_tool_adapters import run_specialist_agent
 except ImportError as e:
     # 如果在 OpenClaw workspace 中，添加路径
     workspace_path = r"C:\Users\11489\.openclaw\workspace-market\agents\strategy-orchestrator"
@@ -124,6 +129,11 @@ except ImportError as e:
         missing_required_blocks,
         run_targeted_sql_pack,
     )
+    from tools.skill_strategy_adapter import (
+        SkillGuidedPlanner,
+        build_framework_analysis,
+    )
+    from tools.agent_tool_adapters import run_specialist_agent
 
 
 logger = logging.getLogger(__name__)
@@ -176,12 +186,21 @@ class StrategyOrchestrator:
     5. 处理回退逻辑
     """
     
-    def __init__(self, event_callback: Optional[Callable[[Dict[str, Any]], None]] = None):
+    def __init__(
+        self,
+        event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+        llm_plan_provider: Optional[Callable[[Dict[str, Any]], List[str]]] = None,
+    ):
         self.evidence_ledger = get_evidence_ledger()
         self.quality_gate = get_quality_gate()
         self.rollback_handler = get_rollback_handler()
         self.phase_tracker = PhaseTracker()
         self.event_callback = event_callback
+        self.workspace_root = Path(__file__).resolve().parents[3]
+        self.skill_planner = SkillGuidedPlanner(
+            workspace_root=self.workspace_root,
+            llm_plan_provider=llm_plan_provider,
+        )
         
         # 工具注册表
         self._tools: Dict[str, Callable] = {}
@@ -244,6 +263,7 @@ class StrategyOrchestrator:
         # 报告生成
         self._tools["report-generator"] = self._tool_report_generate
         self._tools["report-agent"] = self._tool_report_generate
+        self._tools["report-generator-agent"] = self._tool_report_generator_agent
         
         # 搜索
         self._tools["web-search"] = self._tool_web_search
@@ -251,6 +271,10 @@ class StrategyOrchestrator:
         # 方法论状态追踪
         self._tools["phase-tracker"] = self._tool_phase_tracker
         self._tools["phase_tracker"] = self._tool_phase_tracker
+
+        # 专业子 Agent 工具适配
+        self._tools["competitor-analyst"] = self._tool_competitor_analyst
+        self._tools["cost-analyst"] = self._tool_cost_analyst
     
     def register_tool(self, name: str, tool_func: Callable):
         """注册工具"""
@@ -514,53 +538,26 @@ class StrategyOrchestrator:
             state.replan_queue.clear()
             return queued
 
-        plan = []
-        task_type = task.task_type
-        user_intent = task.user_intent
-        analysis_plan = state.analysis_plan or build_analysis_plan(task)
-        
-        # 根据任务类型决定需要哪些证据
-        if task_type == TaskType.MARKET_TREND:
-            # 市场趋势：需要结构化数据 + RAG 上下文
-            plan = ["targeted-sql-pack:core_market_metrics", "nl2sql-pg:get_market_trend", "rag:get_market_reports"]
-            if not user_intent.constraints or "no-framework" not in user_intent.constraints:
-                plan.append("analysis-framework:trend_analysis")
-        
-        elif task_type == TaskType.COMPETITOR_ANALYSIS:
-            # 竞品分析：需要结构化数据 + RAG + 框架
-            plan = ["targeted-sql-pack:core_market_metrics", "nl2sql-pg:get_sales_by_brand", "rag:get_competitor_info"]
-            if not user_intent.constraints or "no-framework" not in user_intent.constraints:
-                plan.append("analysis-framework:competitive_matrix")
-        
-        elif task_type == TaskType.POLICY_IMPACT:
-            # 政策影响：RAG 为主
-            plan = ["rag:get_policies", "targeted-sql-pack:policy_market_metrics", "nl2sql-pg:get_market_data_for_policy"]
-            if not user_intent.constraints or "no-framework" not in user_intent.constraints:
-                plan.append("analysis-framework:pest_political")
-        
-        elif task_type == TaskType.OPPORTUNITY_ASSESSMENT:
-            # 机会评估：多源 + SWOT + TAM
-            plan = ["targeted-sql-pack:core_market_metrics", "nl2sql-pg:get_market_size", "rag:get_market_reports", "web-search:get_trends"]
-            if not user_intent.constraints or "no-framework" not in user_intent.constraints:
-                plan.append("analysis-framework:swot")
-        
-        elif task_type == TaskType.COMPREHENSIVE_RESEARCH:
-            # 综合研究：全量
-            plan = [
-                "targeted-sql-pack:core_market_metrics",
-                "nl2sql-pg:get_full_market_data",
-                "rag:get_all_relevant_docs",
-                "analysis-framework:comprehensive"
-            ]
-        
-        elif task_type == TaskType.SIMPLE_QUERY:
-            # 简单查询：只取结构化数据
-            plan = ["targeted-sql-pack:core_market_metrics", "nl2sql-pg:get_data"]
-        
-        else:
-            # 未知类型：保守策略
-            plan = ["targeted-sql-pack:core_market_metrics", "nl2sql-pg:get_basic_data", "rag:get_context"]
-        
+        plan_payload = self.skill_planner.build_plan(task, state)
+        plan = list(plan_payload.get("steps") or [])
+        self._emit_event(
+            "Plan",
+            "stage3",
+            "done" if plan else "warning",
+            (
+                "已由 "
+                f"{plan_payload.get('source')} 生成本轮分析计划；"
+                f"步骤数={len(plan)}"
+            ),
+            detail={
+                "source": plan_payload.get("source"),
+                "provider_error": plan_payload.get("provider_error"),
+                "skill_path": plan_payload.get("skill_path"),
+                "stage_contract": plan_payload.get("stage_contract"),
+                "raw_plan": plan,
+            },
+            cycle=state.cycle,
+        )
         return [step for step in plan if not self._step_succeeded(state, step)]
     
     def _execute_step(
@@ -1471,22 +1468,15 @@ class StrategyOrchestrator:
             logger.error(f"RAG tool failed: {e}")
             raise
     def _tool_analysis_framework(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
-        """分析框架工具"""
-        # 简化实现
-        return {
-            "framework": param,
-            "evidence": Evidence(
-                source="analysis-framework",
-                tool=param,
-                claim=f"框架分析: {param}",
-                content="框架分析已完成",
-                data_caliber="基于已入账证据的分析框架推断，非原始数据来源",
-                source_credibility=0.60,
-                coverage_dimensions=["推断", "战略框架"],
-                coverage_score=0.50,
-                confidence=0.6
-            )
-        }
+        """Run the automotive-strategy-analysis seven-stage Skill contract."""
+        report_context = self.evidence_ledger.generate_report()
+        return build_framework_analysis(
+            framework=param or "automotive_strategy_seven_stage",
+            task=task,
+            state=state,
+            evidence_report=report_context,
+            workspace_root=self.workspace_root,
+        )
     
     def _tool_pest(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
         return self._tool_analysis_framework("pest", task, state)
@@ -1531,6 +1521,39 @@ class StrategyOrchestrator:
                 confidence=0.7
             )
         }
+
+    def _tool_competitor_analyst(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
+        """Expose agents/competitor-analyst as an orchestrator-managed tool."""
+        return run_specialist_agent(
+            agent_id="competitor-analyst",
+            param=param,
+            task=task,
+            state=state,
+            workspace_root=self.workspace_root,
+            evidence_report=self.evidence_ledger.generate_report(),
+        )
+
+    def _tool_cost_analyst(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
+        """Expose agents/cost-analyst as an orchestrator-managed tool."""
+        return run_specialist_agent(
+            agent_id="cost-analyst",
+            param=param,
+            task=task,
+            state=state,
+            workspace_root=self.workspace_root,
+            evidence_report=self.evidence_ledger.generate_report(),
+        )
+
+    def _tool_report_generator_agent(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
+        """Expose agents/report-generator as a report QA specialist."""
+        return run_specialist_agent(
+            agent_id="report-generator",
+            param=param,
+            task=task,
+            state=state,
+            workspace_root=self.workspace_root,
+            evidence_report=self.evidence_ledger.generate_report(),
+        )
     
     def _tool_web_search(self, param: str, task: OrchestrationTask, state: ReactState) -> Dict:
         """Tavily 网络搜索工具。"""
@@ -2085,10 +2108,11 @@ class StrategyOrchestrator:
 
 
 def create_orchestrator(
-    event_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    llm_plan_provider: Optional[Callable[[Dict[str, Any]], List[str]]] = None,
 ) -> StrategyOrchestrator:
     """创建编排器实例"""
-    return StrategyOrchestrator(event_callback=event_callback)
+    return StrategyOrchestrator(event_callback=event_callback, llm_plan_provider=llm_plan_provider)
 
 
 def orchestrate_task(

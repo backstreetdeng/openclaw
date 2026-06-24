@@ -135,8 +135,9 @@ class QualityGate:
                 message="无法验证相关性（无原始问题）"
             )
         
-        # 简单检查：答案是否包含问题中的关键词
-        keywords = [k for k in user_query if len(k) >= 2]
+        # 中文不能按单字符遍历后再用 len>=2 过滤；这里提取连续中文词、
+        # 英文/数字词，并补充实体和分析计划目标，避免偏题答案被误判通过。
+        keywords = self._extract_relevance_keywords(user_query, result)
         matched = sum(1 for k in keywords if k in answer)
         match_rate = matched / len(keywords) if keywords else 0.5
         
@@ -158,6 +159,34 @@ class QualityGate:
                 details={"match_rate": match_rate}
             )
     
+    def _extract_relevance_keywords(self, user_query: str, result: Dict[str, Any]) -> List[str]:
+        """Extract stable Chinese/English relevance terms from query and plan."""
+        import re
+
+        stopwords = {
+            "分析", "研究", "报告", "看看", "一下", "帮我", "请", "如何", "什么",
+            "市场", "汽车", "乘用车", "中国",
+            "analyze", "analysis", "research", "report", "market", "strategy",
+            "evaluate", "assessment", "study", "trend", "opportunity",
+        }
+        terms: List[str] = []
+        for token in re.findall(r"[\u4e00-\u9fff]{2,}|[A-Za-z0-9][A-Za-z0-9+\-_.]{1,}", user_query or ""):
+            if token not in stopwords and token.lower() not in stopwords and token not in terms:
+                terms.append(token)
+
+        intent = result.get("user_intent") or {}
+        for entity in intent.get("entities") or []:
+            if entity and str(entity) not in terms:
+                terms.append(str(entity))
+
+        plan = result.get("analysis_plan") or {}
+        for key in ("target_brand", "market_scope", "price_band", "power_type", "time_range"):
+            value = plan.get(key)
+            if value and str(value) not in terms:
+                terms.append(str(value))
+
+        return terms[:12]
+
     def _check_scope_clarity(self, result: Dict[str, Any]) -> QualityCheckResult:
         """检查2: 是否说明了分析范围和时间范围"""
         user_intent = result.get("user_intent", {})
