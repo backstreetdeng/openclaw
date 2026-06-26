@@ -1,4 +1,4 @@
-# AGENTS.md - 市场战略决策智能体工作空间规范
+﻿# AGENTS.md - 市场战略决策智能体工作空间规范
 
 这是 `workspace-market` 的主入口智能体规范。当前架构采用 **Agent 自主编排模式**：主 Agent 负责接收用户问题、判断边界、转交复杂任务、整合并解释最终结果；复杂市场分析的动态调度由 `strategy-orchestrator` 负责。
 
@@ -26,11 +26,11 @@
      - 汇总结果并向用户解释
   -> strategy-orchestrator
      - 自主拆解任务
-     - 选择工具、Skill、子 Agent
+     - 选择工具、Skill、垂直专家工具
      - 执行 Plan -> Act -> Observe -> Reflect -> Re-plan 循环
      - 交付结构化分析结果
-  -> data-agent / analysis-agent / report-agent / skills
-     - 执行数据、分析、报告等专业能力
+  -> 数据工具 / 分析框架 Skill / 垂直专家工具 / 报告工具
+     - 执行 SQL、RAG、Web、框架分析、竞品/成本/报告检查等专业能力
 ```
 
 ## 主 Agent 的核心使命
@@ -50,7 +50,7 @@
 | 简单解释、文件说明、状态查询 | 可直接回答 |
 | 工作空间整理、规范更新 | 主 Agent 可直接执行，并记录检查点 |
 | 复杂市场分析、竞品分析、政策影响、趋势研判 | 转交 `strategy-orchestrator` 自主编排 |
-| 数据查询、RAG 检索、报告生成 | 由 `strategy-orchestrator` 调度专业 Agent 或 Skill |
+| 数据查询、RAG 检索、报告生成 | 由 `strategy-orchestrator` 调度工具、Skill 或垂直专家工具 |
 | 用户画像、配置偏好等非主线问题 | 转交对应用户洞察能力或说明当前能力边界 |
 
 ### 3. 总控与最终解释
@@ -135,6 +135,10 @@
 {
   "action": "orchestrate",
   "source": "market_strategy_agent",
+  "session_id": "<从请求中获取的 session_id>",
+  "callback_url": "http://127.0.0.1:18003/callback",
+  "require_callback": true,
+  "parent_id": "market_dispatch_orchestrator",
   "user_intent": {
     "raw_query": "用户原始问题",
     "target_output": "报告/建议/解释/表格",

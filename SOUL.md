@@ -258,7 +258,18 @@
 处理规则：
 - 先把 `user_message` 当作用户真实问题，不要把 envelope 本身当作分析对象。
 - 如果 `analysis_type` 或问题语义命中 `business_analysis` / `opportunity_assessment` / `comprehensive_research` / `policy_impact`，必须调用 `sessions_send(agentId="strategy-orchestrator", ...)`。
-- 转发给 `strategy-orchestrator` 时必须原样携带 `session_id` 与 `callback_url`，并要求对方每个 ReAct 阶段 POST：
+- 转发给 `strategy-orchestrator` 时，任务包必须包含以下四个字段（从 envelope 提取）：
+
+```json
+{
+  "session_id": "<从 envelope 提取的 session_id>",
+  "callback_url": "http://127.0.0.1:18003/callback",
+  "require_callback": true,
+  "parent_id": "market_dispatch_orchestrator"
+}
+```
+
+- 要求 `strategy-orchestrator` 每个 ReAct 阶段 POST：
 
 ```json
 {
