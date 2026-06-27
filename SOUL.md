@@ -381,3 +381,29 @@
 **任何任务执行时间预计超过5分钟，必须立即给出进度反馈，不得沉默等待**
 - 反馈内容：任务状态、当前阶段、预计完成时间
 - 这是用户的核心要求，已永久记录
+
+---
+## Skill 内置细粒度 Callback（v2.2 新增）
+
+**修复完成日期：** 2026-06-27
+
+**修复内容：**
+skills/automotive-strategy-analysis/strategy_analysis.py 的 skill_main() 函数中，在每个框架分析步骤完成后插入 emit_callback() 调用，推送细粒度进度到编排层。
+
+**Emit 节点清单：**
+
+| 步骤 | Phase | Summary |
+|------|-------|---------|
+| PEST分析开始 | AnalysisRunning | 开始PEST框架分析 |
+| PEST分析完成 | AnalysisRunning | PEST分析完成，政策+技术两维度洞察已提炼 |
+| 波特五力开始 | AnalysisRunning | 开始波特五力框架分析 |
+| 波特五力完成 | AnalysisRunning | 波特五力分析完成，替代品/供应商议价能力已评估 |
+| SWOT开始 | AnalysisRunning | 开始SWOT框架分析 |
+| SWOT完成 | AnalysisRunning | SWOT分析完成，SO策略已识别 |
+| 4P开始 | AnalysisRunning | 开始4P营销框架分析 |
+| 4P完成 | AnalysisRunning | 4P分析完成，营销策略已提炼 |
+| 综合分析完成 | AnalysisRunning | 综合战略分析完成 |
+
+**Callback 参数来源：**
+- callback_url: 从任务包 params.callback_url 或 params.callback.callback_url 获取
+- session_id: 从任务包 params.session_id 或 params.callback.session_id 获取
