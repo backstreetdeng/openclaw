@@ -10,8 +10,12 @@ import sys
 import os
 import json
 import re
+import subprocess
 from typing import Dict, Any, List, Optional
 
+
+# callback_client.py 路径
+CALLBACK_CLIENT_PATH = r"C:\Users\11489\.openclaw\workspace-market\fastapi_18003_adapter\callback_client.py"
 # 添加RAG引擎路径
 RAG_ENGINE_PATH = r"E:\AI\data\envs\car_agent_env\ai-decision\rag-engine"
 if RAG_ENGINE_PATH not in sys.path:
@@ -31,6 +35,26 @@ def load_dotenv():
 
 
 load_dotenv()
+def emit_callback(callback_url: str, session_id: str, phase: str, status: str, agent: str, summary: str):
+    """发送 callback 到编排层"""
+    if not callback_url or not session_id:
+        return
+    try:
+        cmd = [
+            sys.executable,
+            CALLBACK_CLIENT_PATH,
+            "--callback-url", callback_url,
+            "--session-id", session_id,
+            "--phase", phase,
+            "--status", status,
+            "--agent", agent,
+            "--summary", summary
+        ]
+        subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+    except Exception:
+        pass
+
+
 
 
 def pest_analysis(brand: str = None, segment: str = "乘用车", sql_data: Dict = None, vector_data: Dict = None) -> Dict[str, Any]:
@@ -418,16 +442,7 @@ def analyze(
 
 # OpenClaw skill 接口
 def skill_main(action: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
-    """
-    OpenClaw skill 主入口
-
-    Args:
-        action: 操作类型 (analyze/pest/porter/swot/fourp/comprehensive)
-        params: 参数字典
-
-    Returns:
-        标准返回结果
-    """
+    """OpenClaw skill 主入口 - 包含细粒度 callback 发射"""
     if params is None:
         params = {}
 
@@ -437,23 +452,100 @@ def skill_main(action: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
     framework = params.get("framework", "all")
     sql_data = params.get("sql_data")
     vector_data = params.get("vector_data")
+    callback_url = params.get("callback_url")
+    session_id = params.get("session_id")
+
+    # 从 params 提取 callback 参数
+    if not callback_url:
+        callback_url = params.get("callback", {}).get("callback_url") if isinstance(params.get("callback"), dict) else None
+    if not session_id:
+        session_id = params.get("callback", {}).get("session_id") if isinstance(params.get("callback"), dict) else None
 
     if action == "analyze":
-        return analyze(question, brand, segment, framework, sql_data, vector_data)
+        # 细粒度 callback：分步执行，每步完成后 emit
+        if framework == "all":
+            # PEST
+            emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始PEST框架分析")
+            pest_result = pest_analysis(brand, segment, sql_data, vector_data)
+            emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "PEST分析完成，政策+技术两维度洞察已提炼")
+
+            # 波特五力
+            emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始波特五力框架分析")
+            porter_result = porter_analysis(brand, segment, sql_data, vector_data)
+            emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "波特五力分析完成，替代品/供应商议价能力已评估")
+
+            # SWOT
+            if brand:
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始SWOT框架分析")
+                swot_result = swot_analysis(brand, segment, sql_data, vector_data)
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "SWOT分析完成，SO策略已识别")
+
+            # 4P
+            if brand:
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始4P营销框架分析")
+                fourp_result = fourp_analysis(brand, segment, sql_data, vector_data)
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "4P分析完成，营销策略已提炼")
+
+            # 综合结果
+            result = comprehensive_analysis(brand, segment, question, sql_data, vector_data)
+            return result
+        else:
+            # 单框架：直接执行
+            if framework == "pest":
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始PEST框架分析")
+                result = pest_analysis(brand, segment, sql_data, vector_data)
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "PEST分析完成")
+                return result
+            elif framework == "porter":
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始波特五力框架分析")
+                result = porter_analysis(brand, segment, sql_data, vector_data)
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "波特五力分析完成")
+                return result
+            elif framework == "swot":
+                if not brand:
+                    return {"success": False, "error": "需要品牌参数"}
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始SWOT框架分析")
+                result = swot_analysis(brand, segment, sql_data, vector_data)
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "SWOT分析完成")
+                return result
+            elif framework == "fourp":
+                if not brand:
+                    return {"success": False, "error": "需要品牌参数"}
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始4P框架分析")
+                result = fourp_analysis(brand, segment, sql_data, vector_data)
+                emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "4P分析完成")
+                return result
+            else:
+                return {"success": False, "error": f"未知操作: {action}"}
     elif action == "pest":
-        return pest_analysis(brand, segment, sql_data, vector_data)
+        emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始PEST框架分析")
+        result = pest_analysis(brand, segment, sql_data, vector_data)
+        emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "PEST分析完成")
+        return result
     elif action == "porter":
-        return porter_analysis(brand, segment, sql_data, vector_data)
+        emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始波特五力框架分析")
+        result = porter_analysis(brand, segment, sql_data, vector_data)
+        emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "波特五力分析完成")
+        return result
     elif action == "swot":
         if not brand:
             return {"success": False, "error": "需要品牌参数"}
-        return swot_analysis(brand, segment, sql_data, vector_data)
+        emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始SWOT框架分析")
+        result = swot_analysis(brand, segment, sql_data, vector_data)
+        emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "SWOT分析完成")
+        return result
     elif action == "fourp":
         if not brand:
             return {"success": False, "error": "需要品牌参数"}
-        return fourp_analysis(brand, segment, sql_data, vector_data)
+        emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始4P框架分析")
+        result = fourp_analysis(brand, segment, sql_data, vector_data)
+        emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "4P分析完成")
+        return result
     elif action == "comprehensive":
-        return comprehensive_analysis(brand, segment, question, sql_data, vector_data)
+        emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "开始综合战略分析")
+        result = comprehensive_analysis(brand, segment, question, sql_data, vector_data)
+        emit_callback(callback_url, session_id, "AnalysisRunning", "running", "analysis-agent", "综合战略分析完成")
+        return result
     else:
         return {"success": False, "error": f"未知操作: {action}"}
 
