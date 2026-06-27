@@ -173,3 +173,5 @@
 - [ ] nl2sql-pg skill
 - [ ] automotive-strategy-analysis skill
 - [ ] report-generator skill
+
+- memory/2026-06-28.md - callback机制修复复盘、git规范、open_id统一表
